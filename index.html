@@ -7,10 +7,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://fonts.googleapis.com/css?family=Roboto:400,700" rel="stylesheet">
     <script>
-    // Prevent window from automatically scrolling
-    window.addEventListener('scroll', function() {
-      window.scrollTo(0, 0);
-    }, {passive: false});
+      // Disable scrolling temporarily after page load
+      window.onload = function() {
+        let scrollEnabled = true;
+        
+        // Disable scrolling
+        function disableScroll() {
+          window.scrollTo(0, 0);
+        }
+    
+        // Temporarily disable scrolling
+        window.addEventListener('scroll', disableScroll, false);
+    
+        // Re-enable scrolling after 3 seconds
+        setTimeout(function() {
+          window.removeEventListener('scroll', disableScroll, false);
+          scrollEnabled = true;
+        }, 3000);  // Adjust this timeout to match your page's load time
+      };
     </script>
     <style>
       body {
