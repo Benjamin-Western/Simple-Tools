@@ -1,48 +1,95 @@
+body {
+  font-family: 'Roboto', sans-serif;
+  background-color: #eee;
+  padding-top: 10px;
+}
+
+header {
+  background-color: #333;
+  color: #fff;
+  padding: 20px;
+  width: 60%;
+  margin: 0 auto;
+  border-radius: 10px;
+}
+
 nav {
   position: fixed;
   top: 0;
-  margin-left: -40px; /* add this line to add space around the nav section */
+  margin-left: -40px;
 }
 
+ul li {
+  padding: 2px;
+}
 
 a {
-  /* Change the color of the links */
   color: blue;
-  /* Remove the underlines from the links */
   text-decoration: none;
-  /* Change the size of the text */
   font-size: 20px;
 }
 
-/* Change the color of the links when the user hovers over them */
 a:hover {
   color: red;
 }
 
-/* Style the list items that contain the links */
-li {
-  /* Add some space around the links */
-  padding: 2px;
+main {
+  width: 70%;
+  margin: 0 auto;
 }
 
-body {
-  padding-top: 10px; /* or any other value that fits your needs */
+section {
+  background-color: #fff;
+  border-radius: 5px;
+  box-shadow: 0 4px 4px rgba(0,0,0,0.1);
+  margin: 50px;
+  padding: 20px;
 }
 
-header {
-  width: 60%;
-  margin: 0 auto; /* this will center the entire header element */
-  border-radius: 10px; /* add this line to give the header rounded edges */
+h1 {
+  font-size: 32px;
 }
+
+h2 {
+  font-size: 24px;
+  margin: 0 0 20px;
+}
+
+h3 {
+  font-size: 16px;
+  margin: 0 0 2px;
+}
+
+iframe {
+  border: none;
+  height: 800px;
+  width: 100%;
+}
+
 footer {
   background-color: #333;
   color: #fff;
   padding: 20px;
-  display: flex; /* this enables flexbox layout for the footer element */
-  align-items: center; /* this centers the elements within the footer element vertically */
-  justify-content: space-between; /* this will distribute the elements within the footer element with equal space between them */
-
 }
-footer div {
-  display: flex; /* this enables flexbox layout for the container element */
+
+img {
+  border-radius: 50%;
+}
+
+@media (max-width: 768px) {
+  main {
+      width: 100%;
+      padding: 0 20px;
+  }
+  section {
+      margin: 20px 0;
+  }
+}
+
+
+iframe[src*="youtube.com"] {
+  width: 50%; /* You can adjust the width as you need */
+  height: 300px; /* You can adjust the height as you need */
+  margin: 0 auto; /* Centers the iframe horizontally */
+  display: block; /* Makes the iframe behave like a block-level element */
 }
