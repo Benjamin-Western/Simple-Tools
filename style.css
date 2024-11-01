@@ -74,18 +74,22 @@ footer {
 
 footer div {
     display: flex;
-    align-items: center; /* Aligns items vertically in the center */
-    justify-content: space-between; /* Distributes space between and around content items */
+    align-items: center;
+    justify-content: start;
+    width: 100%; /* Ensures the footer spans the full width */
 }
 
 footer p {
-    flex: 1; /* Allows the paragraph to grow and take necessary space */
-    margin-right: 20px; /* Adds spacing between the text and the image */
+    margin: 0;
+    padding-right: 20px; /* Provides spacing between the text and the image */
+    flex-grow: 1; /* Allows the paragraph to expand */
 }
 
 footer img {
     flex-shrink: 0; /* Prevents the image from shrinking */
+    height: auto; /* Maintains aspect ratio */
 }
+
 
 
 img {
