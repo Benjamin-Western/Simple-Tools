@@ -72,6 +72,22 @@ footer {
   padding: 20px;
 }
 
+footer div {
+    display: flex;
+    align-items: center; /* Aligns items vertically in the center */
+    justify-content: space-between; /* Distributes space between and around content items */
+}
+
+footer p {
+    flex: 1; /* Allows the paragraph to grow and take necessary space */
+    margin-right: 20px; /* Adds spacing between the text and the image */
+}
+
+footer img {
+    flex-shrink: 0; /* Prevents the image from shrinking */
+}
+
+
 img {
   border-radius: 50%;
 }
