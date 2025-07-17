@@ -9,29 +9,13 @@
 </head>
 <body>
     <header>
-        <nav id="nav-placeholder"></nav>
-        <script>
-          fetch('nav.html')
-            .then(res => res.text())
-            .then(data => {
-              document.getElementById('nav-placeholder').innerHTML = data;
-        
-              // Optional: Remove the link to the current page
-              const currentPage = window.location.pathname.split("/").pop();
-              const links = document.querySelectorAll('#nav-placeholder a');
-              links.forEach(link => {
-                if (link.getAttribute('href') === currentPage) {
-                  link.parentElement.remove();
-                }
-              });
-            });
-        </script>
         <h1>Welcome to Benjamin's Online Tools</h1>
         <h3>Hello! My name is Benjamin Djian, and I am a Field Application Scientist for ProteinSimple based in Germany.</h3>
         <h3>I have created this website as a collection of online tools that can help you optimize the use of your ProteinSimple instruments.</h3>
         <h3>Don't worry if you accidentally make any changes to one of the scripts - simply reload the page to reset everything.</h3>
         <h3>If you have any comments, suggestions, or feedback, please don't hesitate to reach out to me at benjamin.djian@bio-techne.com</h3>
     </header>
+    <nav id="nav-placeholder"></nav>
     <main>
         <section id="idea-box">
             <h2>48-DIG - Ella open cartridge</h2>
@@ -51,6 +35,22 @@
           </iframe>
         </section>
   </main>
+    <script>
+      fetch('nav.html')
+        .then(res => res.text())
+        .then(data => {
+          document.getElementById('nav-placeholder').innerHTML = data;
+    
+          // Optional: Remove the link to the current page
+          const currentPage = window.location.pathname.split("/").pop();
+          const links = document.querySelectorAll('#nav-placeholder a');
+          links.forEach(link => {
+            if (link.getAttribute('href') === currentPage) {
+              link.parentElement.remove();
+            }
+          });
+        });
+    </script>
   <footer>
     <div>
       <p>I hope this was useful. If you have any feedback or questions, please don't hesitate to contact me at: benjamin.djian@bio-techne.com</p>
