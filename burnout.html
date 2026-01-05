@@ -6,225 +6,219 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link href="style.css" rel="stylesheet" type="text/css" />
 
-  <!-- Load React + Babel + Tailwind -->
-  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <!-- React + ReactDOM + Babel + Tailwind (CDN) -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
-
 </head>
 <body class="bg-gray-50 text-gray-900">
   <div id="root" class="p-6"></div>
 
-  <script type="text/babel">
-  
-  import React, { useMemo, useState } from "react";
-  
-  // Helper: generate log-spaced array
-  function logspace(start, stop, num) {
-    const arr = new Array(num);
-    const logStart = Math.log10(start);
-    const logStop = Math.log10(stop);
-    for (let i = 0; i < num; i++) {
-      const t = i / (num - 1);
-      arr[i] = Math.pow(10, logStart + t * (logStop - logStart));
+  <!-- Use Babel to transpile JSX in the browser. No imports/exports. -->
+  <script type="text/babel" data-presets="react">
+
+    const { useState, useMemo } = React;
+
+    // Helpers
+    function logspace(start, stop, num) {
+      const arr = new Array(num);
+      const logStart = Math.log10(start);
+      const logStop = Math.log10(stop);
+      for (let i = 0; i < num; i++) {
+        const t = i / (num - 1);
+        arr[i] = Math.pow(10, logStart + t * (logStop - logStart));
+      }
+      return arr;
     }
-    return arr;
-  }
-  
-  // 4-parameter logistic (4PL)
-  function fourPL(x, a, b, c, d) {
-    return a + (d - a) / (1 + Math.pow(c / x, b));
-  }
-  
-  // Build a path string from points
-  function linePath(xs, ys, x2px, y2px) {
-    let d = "";
-    for (let i = 0; i < xs.length; i++) {
-      const X = x2px(xs[i]);
-      const Y = y2px(ys[i]);
-      d += i === 0 ? `M ${X} ${Y}` : ` L ${X} ${Y}`;
+
+    function fourPL(x, a, b, c, d) {
+      return a + (d - a) / (1 + Math.pow(c / x, b));
     }
-    return d;
-  }
-  
-  // Convert x in [xmin,xmax] log-scale to pixel
-  function makeX2px(xmin, xmax, width, padding = 0) {
-    const logMin = Math.log10(xmin);
-    const logMax = Math.log10(xmax);
-    const drawable = width - 2 * padding;
-    return (x) => {
-      const v = (Math.log10(x) - logMin) / (logMax - logMin);
-      return padding + v * drawable;
-    };
-  }
-  
-  // Convert y in [ymin,ymax] to pixel (y downwards)
-  function makeY2px(ymin, ymax, height, padding = 0) {
-    const drawable = height - 2 * padding;
-    return (y) => {
-      const v = (y - ymin) / (ymax - ymin);
-      return height - padding - v * drawable;
-    };
-  }
-  
-  const WIDTH = 520;
-  const HEIGHT = 300;
-  const PAD = 10; // small padding so strokes aren't clipped
-  
-  export default function Interactive4PLWidget() {
-    const [paramD, setParamD] = useState(1.0); // params_assay[3]
-  
-    // Constants from your Python example
-    const a = 0.02;
-    const b = 1.4;
-    const c = 0.35; // inflection
-    const xMin = 1e-2;
-    const xMax = 1e1;
-    const linFactor = 3.0;
-    const xLow = c / linFactor;
-    const xHigh = c * linFactor;
-  
-    // System settings
-    const yMaxSys = 0.65;          // burnout threshold for both panels
-    const scaleLimited = 1.0;      // panel 1
-    const scaleRescued = 0.55;     // panel 2 (rescue)
-  
-    const xs = useMemo(() => logspace(xMin, xMax, 500), []);
-  
-    const { yTrueLimited, yObsLimited, xCutLimited } = useMemo(() => {
-      const yTrue = xs.map((x) => fourPL(x, a, b, c, paramD) * scaleLimited);
-      const yObs = yTrue.map((y) => Math.min(y, yMaxSys));
-      // find first index where yTrue >= yMaxSys
-      let idx = yTrue.findIndex((y) => y >= yMaxSys);
-      const cut = idx <= 0 ? xHigh : xs[idx];
-      return { yTrueLimited: yTrue, yObsLimited: yObs, xCutLimited: cut };
-    }, [xs, a, b, c, paramD]);
-  
-    const { yTrueRescued, yObsRescued } = useMemo(() => {
-      const yTrue = xs.map((x) => fourPL(x, a, b, c, paramD) * scaleRescued);
-      const yObs = yTrue.map((y) => Math.min(y, yMaxSys));
-      return { yTrueRescued: yTrue, yObsRescued: yObs };
-    }, [xs, a, b, c, paramD]);
-  
-    const x2px = useMemo(() => makeX2px(xMin, xMax, WIDTH, PAD), []);
-    const y2px = useMemo(() => makeY2px(0, 1.2, HEIGHT, PAD), []);
-  
-    // Paths
-    const truePathLimited = useMemo(() => linePath(xs, yTrueLimited, x2px, y2px), [xs, yTrueLimited, x2px, y2px]);
-    const obsPathLimited = useMemo(() => linePath(xs, yObsLimited, x2px, y2px), [xs, yObsLimited, x2px, y2px]);
-    const truePathRescued = useMemo(() => linePath(xs, yTrueRescued, x2px, y2px), [xs, yTrueRescued, x2px, y2px]);
-    const obsPathRescued = useMemo(() => linePath(xs, yObsRescued, x2px, y2px), [xs, yObsRescued, x2px, y2px]);
-  
-    // Shaded x-span rectangles (convert x start/end to rects without axes)
-    function rectForXSpan(xStart, xEnd, fill, opacity) {
-      const X1 = x2px(xStart);
-      const X2 = x2px(xEnd);
-      const w = Math.max(0, X2 - X1);
-      return (
-        <rect key={`${xStart}-${xEnd}-${fill}`} x={X1} y={0} width={w} height={HEIGHT} fill={fill} opacity={opacity} />
-      );
+
+    function linePath(xs, ys, x2px, y2px) {
+      let d = "";
+      for (let i = 0; i < xs.length; i++) {
+        const X = x2px(xs[i]);
+        const Y = y2px(ys[i]);
+        d += i === 0 ? `M ${X} ${Y}` : ` L ${X} ${Y}`;
+      }
+      return d;
     }
-  
-    // Panel templates
-    function Panel({ title, paths, spans }) {
-      return (
-        <div className="relative bg-white rounded-2xl shadow p-3">
-          <div className="text-sm font-medium mb-2">{title}</div>
-          <svg width={WIDTH} height={HEIGHT} className="rounded-xl">
-            {/* Draw shaded spans first */}
-            {spans}
-            {/* Burnout threshold */}
-            <line x1={0} x2={WIDTH} y1={y2px(yMaxSys)} y2={y2px(yMaxSys)} strokeDasharray="6 6" strokeWidth={2} />
-            {/* True and Observed curves */}
-            <path d={paths.truePath} fill="none" strokeWidth={1.5} strokeDasharray="4 4" />
-            <path d={paths.obsPath} fill="none" strokeWidth={3} />
-          </svg>
-        </div>
-      );
+
+    function makeX2px(xmin, xmax, width, pad = 0) {
+      const logMin = Math.log10(xmin);
+      const logMax = Math.log10(xmax);
+      const drawable = width - 2 * pad;
+      return (x) => {
+        const v = (Math.log10(x) - logMin) / (logMax - logMin);
+        return pad + v * drawable;
+      };
     }
-  
-    // Spans for the first panel: split linear range
-    const spansLimited = (
-      <>
-        {/* system-allowed region */}
-        <rect x={0} y={0} width={WIDTH} height={y2px(0) - y2px(yMaxSys)} opacity={0.10} />
-        {/* remaining linear range (left) */}
-        {rectForXSpan(xLow, Math.min(xCutLimited, xHigh), "#66b3ff", 0.18)}
-        {/* lost due to burnout (right) */}
-        {xCutLimited < xHigh && rectForXSpan(Math.max(xCutLimited, xLow), xHigh, "#ff9999", 0.25)}
-      </>
-    );
-  
-    // Spans for the second panel: full linear range
-    const spansRescued = (
-      <>
-        {/* system-allowed region */}
-        <rect x={0} y={0} width={WIDTH} height={y2px(0) - y2px(yMaxSys)} opacity={0.10} />
-        {/* full validated linear range */}
-        {rectForXSpan(xLow, xHigh, "#66b3ff", 0.18)}
-      </>
-    );
-  
-    return (
-      <div className="w-full min-h-screen bg-gray-50 text-gray-900 p-6">
-        <div className="max-w-[1200px] mx-auto">
-          <h1 className="text-2xl font-semibold mb-4">Interactive 4PL System-Limit Demo</h1>
-          <p className="text-sm mb-6">Drag the slider to change the <span className="font-mono">d</span> parameter (top asymptote) and see how the usable linear range is reduced by a fixed system burnout limit in the first panel, and rescued by scaling in the second panel.</p>
-  
-          {/* Controls */}
-          <div className="bg-white rounded-2xl shadow p-4 mb-6 flex items-center gap-4">
-            <label className="text-sm whitespace-nowrap">Top asymptote d:</label>
-            <input
-              type="range"
-              min={0.7}
-              max={1.6}
-              step={0.01}
-              value={paramD}
-              onChange={(e) => setParamD(parseFloat(e.target.value))}
-              className="w-full"
-            />
-            <div className="w-24 text-right font-mono text-sm">{paramD.toFixed(2)}</div>
+
+    function makeY2px(ymin, ymax, height, pad = 0) {
+      const drawable = height - 2 * pad;
+      return (y) => {
+        const v = (y - ymin) / (ymax - ymin);
+        return height - pad - v * drawable;
+      };
+    }
+
+    const WIDTH = 520;
+    const HEIGHT = 300;
+    const PAD = 10;
+
+    function Interactive4PLWidget() {
+      const [paramD, setParamD] = useState(1.0);
+
+      // Params
+      const a = 0.02;
+      const b = 1.4;
+      const c = 0.35; // inflection
+      const xMin = 1e-2;
+      const xMax = 1e1;
+      const linFactor = 3.0;
+      const xLow = c / linFactor;
+      const xHigh = c * linFactor;
+
+      // System
+      const yMaxSys = 0.65;
+      const scaleLimited = 1.0;
+      const scaleRescued = 0.55;
+
+      const xs = useMemo(() => logspace(xMin, xMax, 500), []);
+
+      const { yTrueLimited, yObsLimited, xCutLimited } = useMemo(() => {
+        const yTrue = xs.map((x) => fourPL(x, a, b, c, paramD) * scaleLimited);
+        const yObs = yTrue.map((y) => Math.min(y, yMaxSys));
+        const idx = yTrue.findIndex((y) => y >= yMaxSys);
+        const cut = idx <= 0 ? xHigh : xs[idx];
+        return { yTrueLimited: yTrue, yObsLimited: yObs, xCutLimited: cut };
+      }, [xs, paramD]);
+
+      const { yTrueRescued, yObsRescued } = useMemo(() => {
+        const yTrue = xs.map((x) => fourPL(x, a, b, c, paramD) * scaleRescued);
+        const yObs = yTrue.map((y) => Math.min(y, yMaxSys));
+        return { yTrueRescued: yTrue, yObsRescued: yObs };
+      }, [xs, paramD]);
+
+      const x2px = useMemo(() => makeX2px(xMin, xMax, WIDTH, PAD), []);
+      const y2px = useMemo(() => makeY2px(0, 1.2, HEIGHT, PAD), []);
+
+      const truePathLimited = useMemo(() => linePath(xs, yTrueLimited, x2px, y2px), [xs, yTrueLimited, x2px, y2px]);
+      const obsPathLimited  = useMemo(() => linePath(xs, yObsLimited,  x2px, y2px), [xs, yObsLimited,  x2px, y2px]);
+      const truePathRescued = useMemo(() => linePath(xs, yTrueRescued, x2px, y2px), [xs, yTrueRescued, x2px, y2px]);
+      const obsPathRescued  = useMemo(() => linePath(xs, yObsRescued,  x2px, y2px), [xs, yObsRescued,  x2px, y2px]);
+
+      function rectForXSpan(xStart, xEnd, fill, opacity) {
+        const X1 = x2px(xStart);
+        const X2 = x2px(xEnd);
+        const w = Math.max(0, X2 - X1);
+        return <rect key={`${xStart}-${xEnd}-${fill}`} x={X1} y={0} width={w} height={HEIGHT} fill={fill} opacity={opacity} />;
+      }
+
+      function Panel({ title, paths, spans }) {
+        return (
+          <div className="relative bg-white rounded-2xl shadow p-3">
+            <div className="text-sm font-medium mb-2">{title}</div>
+            <svg width={WIDTH} height={HEIGHT} className="rounded-xl">
+              {spans}
+              {/* Burnout threshold */}
+              <line x1={0} x2={WIDTH} y1={y2px(yMaxSys)} y2={y2px(yMaxSys)} stroke="currentColor" strokeWidth={2} strokeDasharray="6 6" />
+              {/* True and observed curves */}
+              <path d={paths.truePath} fill="none" stroke="currentColor" strokeWidth={1.5} strokeDasharray="4 4" />
+              <path d={paths.obsPath}  fill="none" stroke="currentColor" strokeWidth={3} />
+            </svg>
           </div>
-  
-          <div className="grid grid-cols-12 gap-6 items-stretch">
-            {/* Legend column on the left */}
-            <div className="col-span-3">
-              <div className="bg-white rounded-2xl shadow p-4 h-full">
-                <div className="text-sm font-medium mb-3">Legend</div>
-                <ul className="space-y-3 text-sm">
-                  <li className="flex items-center gap-3"><span className="inline-block w-4 h-4 rounded" style={{background:"rgba(0,0,0,0.10)"}} /> System-allowed range</li>
-                  <li className="flex items-center gap-3"><span className="inline-block w-4 h-4 rounded" style={{background:"#66b3ff", opacity:0.18}} /> Validated linear range</li>
-                  <li className="flex items-center gap-3"><span className="inline-block w-4 h-4 rounded" style={{background:"#ff9999", opacity:0.25}} /> Lost due to burnout</li>
-                  <li className="flex items-center gap-3"><span className="inline-block h-0.5 w-6 border-t border-dashed" /> Burnout threshold</li>
-                  <li className="flex items-center gap-3"><span className="inline-block h-0.5 w-6 border-t" /> Observed (after system limit)</li>
-                  <li className="flex items-center gap-3"><span className="inline-block h-0.5 w-6 border-t" style={{borderTopStyle:"dashed"}} /> True assay response</li>
-                </ul>
+        );
+      }
+
+      // Spans
+      const spansLimited = (
+        <>
+          {/* system-allowed region below burnout */}
+          <rect x={0}
+                y={y2px(yMaxSys)}
+                width={WIDTH}
+                height={y2px(0) - y2px(yMaxSys)}
+                fill="currentColor"
+                opacity={0.10} />
+          {/* remaining linear range */}
+          {rectForXSpan(xLow, Math.min(xCutLimited, xHigh), "#66b3ff", 0.18)}
+          {/* lost due to burnout */}
+          {xCutLimited < xHigh && rectForXSpan(Math.max(xCutLimited, xLow), xHigh, "#ff9999", 0.25)}
+        </>
+      );
+
+      const spansRescued = (
+        <>
+          <rect x={0}
+                y={y2px(yMaxSys)}
+                width={WIDTH}
+                height={y2px(0) - y2px(yMaxSys)}
+                fill="currentColor"
+                opacity={0.10} />
+          {rectForXSpan(xLow, xHigh, "#66b3ff", 0.18)}
+        </>
+      );
+
+      return (
+        <div className="w-full min-h-screen bg-gray-50 text-gray-900 p-6">
+          <div className="max-w-[1200px] mx-auto">
+            <h1 className="text-2xl font-semibold mb-4">Interactive 4PL System Limit Demo</h1>
+            <p className="text-sm mb-6">
+              Drag the slider to change the <span className="font-mono">d</span> parameter and see how the usable linear range is reduced by a fixed system burnout limit in the first panel, and rescued by scaling in the second panel.
+            </p>
+
+            <div className="bg-white rounded-2xl shadow p-4 mb-6 flex items-center gap-4">
+              <label className="text-sm whitespace-nowrap">Top asymptote d:</label>
+              <input
+                type="range"
+                min={0.7}
+                max={1.6}
+                step={0.01}
+                value={paramD}
+                onChange={(e) => setParamD(parseFloat(e.target.value))}
+                className="w-full"
+              />
+              <div className="w-24 text-right font-mono text-sm">{paramD.toFixed(2)}</div>
+            </div>
+
+            <div className="grid grid-cols-12 gap-6 items-stretch">
+              <div className="col-span-3">
+                <div className="bg-white rounded-2xl shadow p-4 h-full">
+                  <div className="text-sm font-medium mb-3">Legend</div>
+                  <ul className="space-y-3 text-sm">
+                    <li className="flex items-center gap-3"><span className="inline-block w-4 h-4 rounded" style={{background:"rgba(0,0,0,0.10)"}} /> System allowed range</li>
+                    <li className="flex items-center gap-3"><span className="inline-block w-4 h-4 rounded" style={{background:"#66b3ff", opacity:0.18}} /> Validated linear range</li>
+                    <li className="flex items-center gap-3"><span className="inline-block w-4 h-4 rounded" style={{background:"#ff9999", opacity:0.25}} /> Lost due to burnout</li>
+                    <li className="flex items-center gap-3"><span className="inline-block h-0.5 w-6 border-t border-dashed" /> Burnout threshold</li>
+                    <li className="flex items-center gap-3"><span className="inline-block h-0.5 w-6 border-t" /> Observed (after system limit)</li>
+                    <li className="flex items-center gap-3"><span className="inline-block h-0.5 w-6 border-t" style={{borderTopStyle:"dashed"}} /> True assay response</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="col-span-9 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <Panel
+                  title="1. System limited - validated range cut by system"
+                  spans={spansLimited}
+                  paths={{ truePath: truePathLimited, obsPath: obsPathLimited }}
+                />
+                <Panel
+                  title="2. Rescue - dilution or lower sensitivity channel"
+                  spans={spansRescued}
+                  paths={{ truePath: truePathRescued, obsPath: obsPathRescued }}
+                />
               </div>
             </div>
-  
-            {/* Plots */}
-            <div className="col-span-9 grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Panel
-                title="1. System limited — validated range cut by system"
-                spans={spansLimited}
-                paths={{ truePath: truePathLimited, obsPath: obsPathLimited }}
-              />
-              <Panel
-                title="2. Rescue — dilution or lower sensitivity channel"
-                spans={spansRescued}
-                paths={{ truePath: truePathRescued, obsPath: obsPathRescued }}
-              />
-            </div>
           </div>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  // Then replace the export line at the end with a ReactDOM.render call:
-  const root = ReactDOM.createRoot(document.getElementById("root"));
-  root.render(<Interactive4PLWidget />);
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<Interactive4PLWidget />);
 
   </script>
 </body>
