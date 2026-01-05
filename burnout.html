@@ -78,17 +78,17 @@
 
     function Panel({ title, pathsData, spansBuilder, yMaxSys }) {
       const clipId = useId();
-
+    
       // Inner plot box
       const plotX = PAD;
       const plotY = PAD;
       const plotW = WIDTH - 2 * PAD;
       const plotH = HEIGHT - 2 * PAD;
-
+    
       // Local mappers
       const x2px = useMemo(() => makeX2pxLocal(1e-2, 1e1, plotW), [plotW]);
       const y2px = useMemo(() => makeY2pxLocal(0, 1.2, plotH), [plotH]);
-
+    
       // Paths in local space
       const truePath = useMemo(
         () => linePath(pathsData.xs, pathsData.yTrue, x2px, y2px),
@@ -98,42 +98,67 @@
         () => linePath(pathsData.xs, pathsData.yObs, x2px, y2px),
         [pathsData, x2px, y2px]
       );
-
+    
       return (
         <div className="relative bg-white rounded-2xl shadow p-3">
-          {/* fixed title height so both cards align */}
           <div className="text-sm font-medium mb-2 h-6 flex items-center">{title}</div>
-
-          <svg width={WIDTH} height={HEIGHT} className="rounded-xl">
+    
+          <svg width={WIDTH} height={HEIGHT} className="rounded-xl overflow-visible">
             <defs>
-              <clipPath id={clipId}>
-                <rect x={plotX} y={plotY} width={plotW} height={plotH} rx="8" ry="8" />
+              {/* Define clip in LOCAL plot coordinates */}
+              <clipPath id={clipId} clipPathUnits="userSpaceOnUse">
+                <rect x={0} y={0} width={plotW} height={plotH} rx="8" ry="8" />
               </clipPath>
             </defs>
-
-            {/* translate to inner plot and clip everything */}
-            <g clipPath={`url(#${clipId})`} transform={`translate(${plotX},${plotY})`}>
-              {spansBuilder({ x2px, y2px, plotW, plotH })}
-
-              {/* burnout threshold */}
-              <line
-                x1={0}
-                x2={plotW}
-                y1={y2px(yMaxSys)}
-                y2={y2px(yMaxSys)}
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeDasharray="6 6"
-                strokeLinecap="butt"
+    
+            {/* Translate first into the plot area */}
+            <g transform={`translate(${plotX},${plotY})`}>
+              {/* Then clip inside that translated coordinate system */}
+              <g clipPath={`url(#${clipId})`}>
+                {spansBuilder({ x2px, y2px, plotW, plotH })}
+    
+                {/* burnout threshold */}
+                <line
+                  x1={0}
+                  x2={plotW}
+                  y1={y2px(yMaxSys)}
+                  y2={y2px(yMaxSys)}
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeDasharray="6 6"
+                  strokeLinecap="butt"
+                />
+    
+                {/* curves */}
+                <path
+                  d={truePath}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeDasharray="4 4"
+                  strokeLinecap="butt"
+                />
+                <path
+                  d={obsPath}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                  strokeLinecap="butt"
+                />
+              </g>
+    
+              {/* Optional frame drawn outside the clipped group but still aligned */}
+              <rect
+                x={0}
+                y={0}
+                width={plotW}
+                height={plotH}
+                fill="none"
+                stroke="transparent"
+                rx="8"
+                ry="8"
               />
-
-              {/* curves */}
-              <path d={truePath} fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 4" strokeLinecap="butt" />
-              <path d={obsPath}  fill="none" stroke="currentColor" strokeWidth="3"   strokeLinecap="butt" />
             </g>
-
-            {/* optional frame */}
-            <rect x={plotX} y={plotY} width={plotW} height={plotH} fill="none" stroke="transparent" />
           </svg>
         </div>
       );
@@ -258,15 +283,15 @@
                       Lost due to burnout
                     </li>
                     <li className="flex items-center gap-3">
-                      <span className="inline-block h-0.5 w-6 border-t border-dashed" />
+                      <span className="inline-block w-10 border-t-4 border-dashed border-gray-900" />
                       Burnout threshold
                     </li>
                     <li className="flex items-center gap-3">
-                      <span className="inline-block h-0.5 w-6 border-t" />
+                      <span className="inline-block w-10 border-t-4 border-gray-900" />
                       Observed (after system limit)
                     </li>
                     <li className="flex items-center gap-3">
-                      <span className="inline-block h-0.5 w-6 border-t" style={{borderTopStyle:"dashed"}} />
+                      <span className="inline-block w-10 border-t-4 border-dashed border-gray-900" />
                       True assay response
                     </li>
                   </ul>
