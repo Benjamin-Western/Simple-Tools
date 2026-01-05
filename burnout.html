@@ -35,11 +35,14 @@
       return a + (d - a) / (1 + Math.pow(c / x, b));
     }
 
-    function linePath(xs, ys, x2px, y2px) {
+    function linePath(xs, ys, x2px, y2px, plotW, plotH) {
       let d = "";
       for (let i = 0; i < xs.length; i++) {
-        const X = x2px(xs[i]);
-        const Y = y2px(ys[i]);
+        // clamp to [0, plotW] and [0, plotH]
+        let X = x2px(xs[i]);
+        let Y = y2px(ys[i]);
+        X = Math.max(0, Math.min(plotW, X));
+        Y = Math.max(0, Math.min(plotH, Y));
         d += i === 0 ? `M ${X} ${Y}` : ` L ${X} ${Y}`;
       }
       return d;
@@ -77,61 +80,64 @@
     const PAD = 12;
 
     function Panel({ title, pathsData, spansBuilder, yMaxSys }) {
-      const clipId = useId();
-
-      // Inner plot box
+      const clipId = React.useId();
+    
       const plotX = PAD;
       const plotY = PAD;
       const plotW = WIDTH - 2 * PAD;
       const plotH = HEIGHT - 2 * PAD;
-
-      // Local mappers
-      const x2px = useMemo(() => makeX2pxLocal(1e-2, 1e1, plotW), [plotW]);
-      const y2px = useMemo(() => makeY2pxLocal(0, 1.2, plotH), [plotH]);
-
-      // Paths in local space
-      const truePath = useMemo(
-        () => linePath(pathsData.xs, pathsData.yTrue, x2px, y2px),
-        [pathsData, x2px, y2px]
+    
+      // Local mappers (0..plotW, 0..plotH)
+      const x2px = React.useMemo(() => makeX2pxLocal(1e-2, 1e1, plotW), [plotW]);
+      const y2px = React.useMemo(() => makeY2pxLocal(0, 1.2, plotH), [plotH]);
+    
+      // Build paths in local coords
+      const truePath = React.useMemo(
+        () => linePath(pathsData.xs, pathsData.yTrue, x2px, y2px, plotW, plotH),
+        [pathsData, x2px, y2px, plotW, plotH]
       );
-      const obsPath = useMemo(
-        () => linePath(pathsData.xs, pathsData.yObs, x2px, y2px),
-        [pathsData, x2px, y2px]
+      const obsPath = React.useMemo(
+        () => linePath(pathsData.xs, pathsData.yObs, x2px, y2px, plotW, plotH),
+        [pathsData, x2px, y2px, plotW, plotH]
       );
-
+    
       return (
         <div className="relative bg-white rounded-2xl shadow p-3">
-          {/* fixed title height so both cards align */}
+          {/* fixed title height keeps cards aligned */}
           <div className="text-sm font-medium mb-2 h-6 flex items-center">{title}</div>
-
+    
           <svg width={WIDTH} height={HEIGHT} className="rounded-xl">
             <defs>
-              <clipPath id={clipId}>
+              {/* 1) Fix: clip in user space; do NOT translate this group */}
+              <clipPath id={clipId} clipPathUnits="userSpaceOnUse">
                 <rect x={plotX} y={plotY} width={plotW} height={plotH} rx="8" ry="8" />
               </clipPath>
             </defs>
-
-            {/* translate to inner plot and clip everything */}
-            <g clipPath={`url(#${clipId})`} transform={`translate(${plotX},${plotY})`}>
-              {spansBuilder({ x2px, y2px, plotW, plotH })}
-
-              {/* burnout threshold */}
-              <line
-                x1={0}
-                x2={plotW}
-                y1={y2px(yMaxSys)}
-                y2={y2px(yMaxSys)}
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeDasharray="6 6"
-                strokeLinecap="butt"
-              />
-
-              {/* curves */}
-              <path d={truePath} fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 4" strokeLinecap="butt" />
-              <path d={obsPath}  fill="none" stroke="currentColor" strokeWidth="3"   strokeLinecap="butt" />
+    
+            {/* 2) Apply clip to this group (no transform here) */}
+            <g clipPath={`url(#${clipId})`}>
+              {/* 3) Translate content into the plot area inside the clipped group */}
+              <g transform={`translate(${plotX},${plotY})`}>
+                {spansBuilder({ x2px, y2px, plotW, plotH })}
+    
+                {/* Burnout threshold */}
+                <line
+                  x1={0}
+                  x2={plotW}
+                  y1={y2px(yMaxSys)}
+                  y2={y2px(yMaxSys)}
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeDasharray="6 6"
+                  strokeLinecap="butt"
+                />
+    
+                {/* Curves */}
+                <path d={truePath} fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 4" strokeLinecap="butt" />
+                <path d={obsPath}  fill="none" stroke="currentColor" strokeWidth="3"   strokeLinecap="butt" />
+              </g>
             </g>
-
+    
             {/* optional frame */}
             <rect x={plotX} y={plotY} width={plotW} height={plotH} fill="none" stroke="transparent" />
           </svg>
