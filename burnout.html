@@ -38,11 +38,10 @@
     function linePath(xs, ys, x2px, y2px, plotW, plotH) {
       let d = "";
       for (let i = 0; i < xs.length; i++) {
-        // clamp to [0, plotW] and [0, plotH]
         let X = x2px(xs[i]);
         let Y = y2px(ys[i]);
-        X = Math.max(0, Math.min(plotW, X));
-        Y = Math.max(0, Math.min(plotH, Y));
+        X = Math.max(0, Math.min(plotW - 0.5, X));
+        Y = Math.max(0, Math.min(plotH - 0.5, Y));
         d += i === 0 ? `M ${X} ${Y}` : ` L ${X} ${Y}`;
       }
       return d;
@@ -87,11 +86,10 @@
       const plotW = WIDTH - 2 * PAD;
       const plotH = HEIGHT - 2 * PAD;
     
-      // Local mappers (0..plotW, 0..plotH)
+      // local mappers
       const x2px = React.useMemo(() => makeX2pxLocal(1e-2, 1e1, plotW), [plotW]);
       const y2px = React.useMemo(() => makeY2pxLocal(0, 1.2, plotH), [plotH]);
     
-      // Build paths in local coords
       const truePath = React.useMemo(
         () => linePath(pathsData.xs, pathsData.yTrue, x2px, y2px, plotW, plotH),
         [pathsData, x2px, y2px, plotW, plotH]
@@ -101,29 +99,34 @@
         [pathsData, x2px, y2px, plotW, plotH]
       );
     
+      // inset the clip a hair to remove anti-alias fringe
+      const inset = 0.5;
+    
       return (
         <div className="relative bg-white rounded-2xl shadow p-3">
-          {/* fixed title height keeps cards aligned */}
           <div className="text-sm font-medium mb-2 h-6 flex items-center">{title}</div>
     
-          <svg width={WIDTH} height={HEIGHT} className="rounded-xl">
+          <svg width={WIDTH} height={HEIGHT} className="rounded-xl" style={{overflow: "hidden"}}>
             <defs>
-              {/* 1) Fix: clip in user space; do NOT translate this group */}
+              {/* clip in user space; no rounded corners */}
               <clipPath id={clipId} clipPathUnits="userSpaceOnUse">
-                <rect x={plotX} y={plotY} width={plotW} height={plotH} rx="8" ry="8" />
+                <rect
+                  x={plotX}
+                  y={plotY}
+                  width={plotW - inset}
+                  height={plotH - inset}
+                />
               </clipPath>
             </defs>
     
-            {/* 2) Apply clip to this group (no transform here) */}
+            {/* apply clip; translate content inside */}
             <g clipPath={`url(#${clipId})`}>
-              {/* 3) Translate content into the plot area inside the clipped group */}
               <g transform={`translate(${plotX},${plotY})`}>
                 {spansBuilder({ x2px, y2px, plotW, plotH })}
     
-                {/* Burnout threshold */}
                 <line
                   x1={0}
-                  x2={plotW}
+                  x2={plotW - inset}
                   y1={y2px(yMaxSys)}
                   y2={y2px(yMaxSys)}
                   stroke="currentColor"
@@ -132,13 +135,11 @@
                   strokeLinecap="butt"
                 />
     
-                {/* Curves */}
                 <path d={truePath} fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 4" strokeLinecap="butt" />
                 <path d={obsPath}  fill="none" stroke="currentColor" strokeWidth="3"   strokeLinecap="butt" />
               </g>
             </g>
     
-            {/* optional frame */}
             <rect x={plotX} y={plotY} width={plotW} height={plotH} fill="none" stroke="transparent" />
           </svg>
         </div>
@@ -191,37 +192,42 @@
       const xCutLimited = idxCut <= 0 ? xHigh : xs[idxCut];
 
       // span builders receive local mappers
-      const spansLimitedBuilder = ({ x2px, y2px, plotW, plotH }) => (
-        <>
-          {/* system allowed region below burnout */}
-          <rect
-            x={0}
-            y={y2px(yMaxSys)}
-            width={plotW}
-            height={y2px(0) - y2px(yMaxSys)}
-            fill="currentColor"
-            opacity="0.10"
-          />
-          {/* remaining linear range */}
-          {rectForXSpanLocal(xLow, Math.min(xCutLimited, xHigh), x2px, plotH, "#66b3ff", 0.18)}
-          {/* lost due to burnout */}
-          {xCutLimited < xHigh && rectForXSpanLocal(Math.max(xCutLimited, xLow), xHigh, x2px, plotH, "#ff9999", 0.25)}
-        </>
-      );
-
-      const spansRescuedBuilder = ({ x2px, y2px, plotW, plotH }) => (
-        <>
-          <rect
-            x={0}
-            y={y2px(yMaxSys)}
-            width={plotW}
-            height={y2px(0) - y2px(yMaxSys)}
-            fill="currentColor"
-            opacity="0.10"
-          />
-          {rectForXSpanLocal(xLow, xHigh, x2px, plotH, "#66b3ff", 0.18)}
-        </>
-      );
+      const spansLimitedBuilder = ({ x2px, y2px, plotW, plotH }) => {
+        const wClamp = plotW - 0.5;
+        return (
+          <>
+            <rect
+              x={0}
+              y={y2px(yMaxSys)}
+              width={wClamp}
+              height={y2px(0) - y2px(yMaxSys)}
+              fill="currentColor"
+              opacity="0.10"
+              shapeRendering="crispEdges"
+            />
+            {rectForXSpanLocal(xLow, Math.min(xCutLimited, xHigh), x2px, plotH, "#66b3ff", 0.18)}
+            {xCutLimited < xHigh && rectForXSpanLocal(Math.max(xCutLimited, xLow), xHigh, x2px, plotH, "#ff9999", 0.25)}
+          </>
+        );
+      };
+      
+      const spansRescuedBuilder = ({ x2px, y2px, plotW, plotH }) => {
+        const wClamp = plotW - 0.5;
+        return (
+          <>
+            <rect
+              x={0}
+              y={y2px(yMaxSys)}
+              width={wClamp}
+              height={y2px(0) - y2px(yMaxSys)}
+              fill="currentColor"
+              opacity="0.10"
+              shapeRendering="crispEdges"
+            />
+            {rectForXSpanLocal(xLow, xHigh, x2px, plotH, "#66b3ff", 0.18)}
+          </>
+        );
+      };
 
       return (
         <div className="w-full min-h-screen bg-gray-50 text-gray-900 p-6">
