@@ -175,7 +175,7 @@
               <input
                 type="range"
                 min={0.7}
-                max={1.4}
+                max={1.35}
                 step={0.01}
                 value={paramD}
                 onChange={(e) => setParamD(parseFloat(e.target.value))}
@@ -201,12 +201,12 @@
 
               <div className="col-span-9 grid grid-cols-1 md:grid-cols-2 gap-6">
                 <Panel
-                  title="1. System limited - validated range cut by system"
+                  title="1. The system limit can affect assay dynamic range"
                   spans={spansLimited}
                   paths={{ truePath: truePathLimited, obsPath: obsPathLimited }}
                 />
                 <Panel
-                  title="2. Rescue - dilution or lower sensitivity channel"
+                  title="2. Rescued: Sample dilution or lower sensitivity detection channel (NIR or IR)"
                   spans={spansRescued}
                   paths={{ truePath: truePathRescued, obsPath: obsPathRescued }}
                 />
