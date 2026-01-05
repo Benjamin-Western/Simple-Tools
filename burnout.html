@@ -111,14 +111,23 @@
       const obsPathRescued  = useMemo(() => linePath(xs, yObsRescued,  x2px, y2px), [xs, yObsRescued,  x2px, y2px]);
 
       function rectForXSpan(xStart, xEnd, fill, opacity) {
+        const plotX = PAD;
+        const plotY = PAD;
+        const plotW = WIDTH - 2 * PAD;
+        const plotH = HEIGHT - 2 * PAD;
+      
         const X1 = x2px(xStart);
         const X2 = x2px(xEnd);
-        const w = Math.max(0, X2 - X1);
-        return <rect key={`${xStart}-${xEnd}-${fill}`} x={X1} y={0} width={w} height={HEIGHT} fill={fill} opacity={opacity} />;
+        const x = Math.max(plotX, Math.min(X1, X2));
+        const w = Math.max(0, Math.min(plotX + plotW, Math.max(X1, X2)) - x);
+      
+        return <rect x={x} y={plotY} width={w} height={plotH} fill={fill} opacity={opacity} />;
       }
 
       function Panel({ title, paths, spans }) {
-        // Inner plotting area (respect padding)
+        const { useId } = React;
+        const clipId = useId();             // unique per Panel instance
+      
         const plotX = PAD;
         const plotY = PAD;
         const plotW = WIDTH - 2 * PAD;
@@ -128,18 +137,17 @@
           <div className="relative bg-white rounded-2xl shadow p-3">
             <div className="text-sm font-medium mb-2">{title}</div>
             <svg width={WIDTH} height={HEIGHT} className="rounded-xl">
-              {/* Clip to the inner plotting rectangle so nothing spills out */}
               <defs>
-                <clipPath id="plotClip">
+                <clipPath id={clipId}>
                   <rect x={plotX} y={plotY} width={plotW} height={plotH} rx="8" ry="8" />
                 </clipPath>
               </defs>
       
-              {/* Everything visual goes inside the clipped group */}
-              <g clipPath="url(#plotClip)">
+              {/* Everything inside the plot is clipped */}
+              <g clipPath={`url(#${clipId})`}>
                 {spans}
       
-                {/* Burnout threshold */}
+                {/* Burnout threshold (constrained to plot box) */}
                 <line
                   x1={plotX}
                   x2={plotX + plotW}
@@ -155,7 +163,7 @@
                 <path d={paths.obsPath}  fill="none" stroke="currentColor" strokeWidth={3} />
               </g>
       
-              {/* Optional: a faint border around the plotting area */}
+              {/* Optional plot frame */}
               <rect x={plotX} y={plotY} width={plotW} height={plotH} fill="none" stroke="transparent" />
             </svg>
           </div>
@@ -175,14 +183,12 @@
             fill="currentColor"
             opacity={0.10}
           />
-          {/* remaining linear range */}
           {rectForXSpan(xLow, Math.min(xCutLimited, xHigh), "#66b3ff", 0.18)}
-          {/* lost due to burnout */}
           {xCutLimited < xHigh && rectForXSpan(Math.max(xCutLimited, xLow), xHigh, "#ff9999", 0.25)}
         </>
       );
       
-      // Spans for the second panel
+      // Spans for panel 2 (rescued)
       const spansRescued = (
         <>
           <rect
@@ -196,7 +202,6 @@
           {rectForXSpan(xLow, xHigh, "#66b3ff", 0.18)}
         </>
       );
-
       return (
         <div className="w-full min-h-screen bg-gray-50 text-gray-900 p-6">
           <div className="max-w-[1200px] mx-auto">
