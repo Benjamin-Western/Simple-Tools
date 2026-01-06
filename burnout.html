@@ -188,7 +188,22 @@
             <g transform={`translate(${plotX},${plotY})`}>
               <g clipPath={`url(#${clipId})`}>
                 {spansBuilder({ x2px, y2px, plotW, plotH })}
-
+                
+                {/* log-decade gridlines (visual proof of log scale) */}
+                {[1e-4, 1e-3, 1e-2, 1e-1, 1].map((yy) => (
+                  <line
+                    key={yy}
+                    x1={0}
+                    x2={plotW}
+                    y1={y2px(yy)}
+                    y2={y2px(yy)}
+                    stroke="currentColor"
+                    strokeWidth="1"
+                    opacity="0.12"
+                  />
+                ))}
+                
+                {/* detection floor */}
                 <line
                   x1={0}
                   x2={plotW}
@@ -200,7 +215,8 @@
                   strokeLinecap="butt"
                   opacity="0.8"
                 />
-
+                
+                {/* burnout ceiling */}
                 <line
                   x1={0}
                   x2={plotW}
@@ -211,7 +227,8 @@
                   strokeDasharray="6 6"
                   strokeLinecap="butt"
                 />
-
+                
+                {/* curves */}
                 <path
                   d={truePath}
                   fill="none"
