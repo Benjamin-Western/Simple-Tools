@@ -54,7 +54,6 @@
     function makeY2pxLogLocal(yminPos, ymaxPos, plotH) {
       const lo = Math.log10(yminPos);
       const hi = Math.log10(ymaxPos);
-      console.log("LOG MAPPER ACTIVE");
       return (y) => {
         const yy = Math.max(y, yminPos);
         const v = (Math.log10(yy) - lo) / (hi - lo);
@@ -75,6 +74,7 @@
       return Math.min(Math.max(y, lo), hi);
     }
 
+    // Slider maps to target fraction (unitless) in the loaded sample.
     function abundanceFractionFromT(t) {
       const minF = 1e-5;  // 0.00001%
       const maxF = 0.5;   // 50%
@@ -83,6 +83,7 @@
       return Math.pow(10, logMin + t * (logMax - logMin));
     }
 
+    // Find contiguous true-runs and return [startX, endX] pairs using xs boundaries.
     function contiguousSpans(xs, mask) {
       const spans = [];
       let inRun = false;
@@ -118,6 +119,7 @@
       return `${pct.toExponential(2)}%`;
     }
 
+    // NIR gain slider maps (log-space) to a reasonable interval.
     function nirGainFromT(t) {
       const minG = 1 / 500;
       const maxG = 1 / 2;
@@ -126,8 +128,18 @@
       return Math.pow(10, logMin + t * (logMax - logMin));
     }
 
+    // X span slider controls the half-width in decades around a fixed geometric center.
     function xHalfDecadesFromT(t) {
       return 0.8 + t * (3.0 - 0.8);
+    }
+
+    // Y-axis min slider maps (log-space): 0 -> 1e-2, 1 -> 1e-10
+    function yMinFromT(t) {
+      const maxMin = 1e-2;
+      const minMin = 1e-10;
+      const logMax = Math.log10(maxMin);
+      const logMin = Math.log10(minMin);
+      return Math.pow(10, logMax + t * (logMin - logMax));
     }
 
     const WIDTH = 520;
@@ -161,7 +173,6 @@
         [yDomainLog, plotH]
       );
 
-      console.log("Y scale check:", title, yDomainLog, y2px(0.001), y2px(0.1), y2px(1.0));
       const truePath = useMemo(() => linePath(xs, yTrue, x2px, y2px), [xs, yTrue, x2px, y2px]);
       const obsPath = useMemo(() => linePath(xs, yObs, x2px, y2px), [xs, yObs, x2px, y2px]);
 
@@ -188,21 +199,27 @@
             <g transform={`translate(${plotX},${plotY})`}>
               <g clipPath={`url(#${clipId})`}>
                 {spansBuilder({ x2px, y2px, plotW, plotH })}
-                
-                {/* log-decade gridlines (visual proof of log scale) */}
-                {[1e-4, 1e-3, 1e-2, 1e-1, 1].map((yy) => (
+
+                {/* log-decade gridlines (visual cue that y is log) */}
+                {[
+                  yDomainLog.yMinPos,
+                  yDomainLog.yMinPos * 10,
+                  yDomainLog.yMinPos * 100,
+                  yDomainLog.yMinPos * 1000,
+                  yDomainLog.yMinPos * 10000,
+                ].map((yy, i) => (
                   <line
-                    key={yy}
+                    key={i}
                     x1={0}
                     x2={plotW}
                     y1={y2px(yy)}
                     y2={y2px(yy)}
                     stroke="currentColor"
                     strokeWidth="1"
-                    opacity="0.12"
+                    opacity="0.10"
                   />
                 ))}
-                
+
                 {/* detection floor */}
                 <line
                   x1={0}
@@ -215,7 +232,7 @@
                   strokeLinecap="butt"
                   opacity="0.8"
                 />
-                
+
                 {/* burnout ceiling */}
                 <line
                   x1={0}
@@ -227,7 +244,7 @@
                   strokeDasharray="6 6"
                   strokeLinecap="butt"
                 />
-                
+
                 {/* curves */}
                 <path
                   d={truePath}
@@ -263,26 +280,37 @@
     }
 
     function Interactive4PLWidget() {
+      // Target abundance slider (as before)
       const [t, setT] = useState(0.62);
 
+      // Linearity band slider (as before): controls UPPER slope bound (more permissive -> expands left)
       const fixedMinSlope = 0.10;
       const [maxSlope, setMaxSlope] = useState(1.15);
 
+      // Global burnout threshold slider (same on all channels)
       const [burnoutY, setBurnoutY] = useState(0.90);
+
+      // X range slider
       const [xSpanT, setXSpanT] = useState(0.50);
+
+      // NIR gain slider (IR gain is squared)
       const [nirGainT, setNirGainT] = useState(0.42);
 
-      // 4PL shape parameters (unchanged)
+      // NEW: Y-axis minimum slider (log)
+      const [yMinT, setYMinT] = useState(0.55);
+
+      // 4PL shape parameters (kept)
       const b = 1.35;
       const c = 1e-2;
 
       const abundanceFrac = useMemo(() => abundanceFractionFromT(t), [t]);
       const abundancePctStr = useMemo(() => fmtPct(abundanceFrac), [abundanceFrac]);
 
-      // IMPORTANT: baseline is now constant (no matrix term), so "no target" can sit at 0 after subtraction
+      // Baseline constant + max (kept from current version)
       const a0 = 0.03;
       const d0 = 1.5;
 
+      // Derive xMin/xMax from slider, symmetric in log space around fixed center
       const xCenterLog10 = -0.5;
       const xHalfDec = useMemo(() => xHalfDecadesFromT(xSpanT), [xSpanT]);
       const xMin = useMemo(() => Math.pow(10, xCenterLog10 - xHalfDec), [xHalfDec]);
@@ -328,40 +356,40 @@
         [nirTargetGain, irTargetGain]
       );
 
-      // Log y-axis: allow tiny values (we will plot blank-subtracted y, which can be 0)
-      const yDomainLog = useMemo(() => ({ yMinPos: 1e-4, yMaxPos: 2.5 }), []);
+      // Log y-axis domain: NEW yMinPos is controlled by slider
+      const yMinPos = useMemo(() => yMinFromT(yMinT), [yMinT]);
+      const yDomainLog = useMemo(() => ({ yMinPos, yMaxPos: 2.5 }), [yMinPos]);
 
       const panels = useMemo(() => {
         const EPS = 1e-12;
 
         return channels.map((ch) => {
-          // Constant baseline
           const yBase = xs.map(() => a0);
 
-          // TRUE absolute response (includes baseline)
+          // Absolute response (includes baseline)
           const yAbsTrue = xs.map((xTotal, i) => {
             const xTargetEff = Math.max(1e-16, abundanceFrac * xTotal * ch.targetGain);
             const a = yBase[i];
             const d = d0;
-
             const yRaw = fourPL(xTargetEff, a, b, c, d);
             const yScaled = a + (yRaw - a) * ch.signalGain;
             return yScaled;
           });
 
-          // PLOT response: blank-subtracted (net signal), clipped at 0 so "no target" is flat at 0
+          // Net plotted response (blank-subtracted)
           const yTrue = yAbsTrue.map((y, i) => Math.max(0, y - yBase[i]));
 
-          // Observed (after floor + burnout) in the same plotted units
+          // Floors/ceilings in plotted units
           const yMinDetPlot = Math.max(0, ch.yMinDet - a0);
           const yMaxSysPlot = Math.max(1e-6, burnoutY - a0);
+
           const yObs = yTrue.map((y) => clamp(y, yMinDetPlot, yMaxSysPlot));
 
-          // Burnout onset computed on absolute signal (physical saturation), then drawn in x-space
+          // Burnout onset computed in absolute units
           const idxBurn = yAbsTrue.findIndex((y) => y >= burnoutY);
           const xCutBurn = idxBurn === -1 ? Infinity : xs[Math.max(0, idxBurn)];
 
-          // Slope computed on net signal (already baseline-subtracted)
+          // Slope on net signal
           const logX = xs.map((x) => Math.log10(x));
           const yNet = yTrue.map((yn) => Math.max(EPS, yn));
           const logY = yNet.map((yn) => Math.log10(yn));
@@ -376,17 +404,17 @@
           slope[slope.length - 1] = slope[slope.length - 2];
 
           const isBlue = xs.map((xTotal, i) => {
-            const withinSignal = (yAbsTrue[i] >= ch.yMinDet) && (yAbsTrue[i] < burnoutY);
+            const withinSignalAbs = (yAbsTrue[i] >= ch.yMinDet) && (yAbsTrue[i] < burnoutY);
             const withinSlope = (slope[i] >= slopeBand.min) && (slope[i] <= slopeBand.max);
             const beforeBurn = !(xCutBurn < Infinity && xTotal >= xCutBurn);
-            return withinSignal && withinSlope && beforeBurn;
+            return withinSignalAbs && withinSlope && beforeBurn;
           });
 
           const blueSpans = contiguousSpans(xs, isBlue);
 
           const spansBuilder = ({ x2px, y2px, plotW, plotH }) => (
             <>
-              {/* Below detection floor shading (in plotted units) */}
+              {/* Below detection floor shading (plotted units) */}
               <rect
                 x={0}
                 y={y2px(yMinDetPlot)}
@@ -396,14 +424,14 @@
                 opacity="0.06"
               />
 
-              {/* Blue regions */}
+              {/* Blue: slope-based linear region */}
               {blueSpans.map(([xA, xB], k) => (
                 <React.Fragment key={k}>
                   {rectForXSpanLocal(xA, xB, x2px, plotH, "#66b3ff", 0.18)}
                 </React.Fragment>
               ))}
 
-              {/* Red: burnout from onset to xMax */}
+              {/* Red: burnout region from onset to xMax */}
               {xCutBurn < xMax &&
                 rectForXSpanLocal(
                   Math.max(xCutBurn, xMin),
@@ -505,7 +533,7 @@
                   />
                   <div className="mt-2 text-sm text-gray-700">
                     Burnout y (absolute units): <span className="font-mono">{burnoutY.toFixed(2)}</span>
-                    <span className="text-gray-600"> (plot uses net signal, so dashed ceiling is burnout minus baseline)</span>
+                    <span className="text-gray-600"> (ceiling line is shown in net units)</span>
                   </div>
                 </div>
 
@@ -523,6 +551,23 @@
                   <div className="mt-2 text-sm text-gray-700">
                     X range: <span className="font-mono">{fmtSci(xMin, 1)} to {fmtSci(xMax, 1)}</span>
                     <span className="text-gray-600"> (symmetric in log space)</span>
+                  </div>
+                </div>
+
+                <div className="col-span-12 lg:col-span-6">
+                  <div className="text-sm font-medium mb-2">Y-axis minimum (log)</div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.005}
+                    value={yMinT}
+                    onChange={(e) => setYMinT(parseFloat(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="mt-2 text-sm text-gray-700">
+                    yMin: <span className="font-mono">{fmtSci(yDomainLog.yMinPos, 1)}</span>
+                    <span className="text-gray-600"> (lower values make log behaviour more obvious)</span>
                   </div>
                 </div>
 
@@ -584,7 +629,7 @@
                   </ul>
 
                   <div className="mt-5 text-xs text-gray-600 leading-relaxed">
-                    Net signal = (measured signal) minus (blank baseline). This makes "no target" sit at 0 and makes channel targetGain differences visible at low abundance.
+                    Net signal = (measured signal) minus (blank baseline). Y-axis minimum controls how many decades are visible.
                   </div>
                 </div>
               </div>
