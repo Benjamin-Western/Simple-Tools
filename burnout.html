@@ -22,8 +22,8 @@
       const logStart = Math.log10(start);
       const logStop = Math.log10(stop);
       for (let i = 0; i < num; i++) {
-        const t = i / (num - 1);
-        arr[i] = Math.pow(10, logStart + t * (logStop - logStart));
+        const tt = i / (num - 1);
+        arr[i] = Math.pow(10, logStart + tt * (logStop - logStart));
       }
       return arr;
     }
@@ -74,16 +74,14 @@
       return Math.min(Math.max(y, lo), hi);
     }
 
-    // Slider maps to target fraction (unitless) in the loaded sample.
     function abundanceFractionFromT(t) {
-      const minF = 1e-5;  // 0.00001%
-      const maxF = 0.5;   // 50%
+      const minF = 1e-5;
+      const maxF = 0.5;
       const logMin = Math.log10(minF);
       const logMax = Math.log10(maxF);
       return Math.pow(10, logMin + t * (logMax - logMin));
     }
 
-    // Find contiguous true-runs and return [startX, endX] pairs using xs boundaries.
     function contiguousSpans(xs, mask) {
       const spans = [];
       let inRun = false;
@@ -119,7 +117,6 @@
       return `${pct.toExponential(2)}%`;
     }
 
-    // NIR gain slider maps (log-space) to a reasonable interval.
     function nirGainFromT(t) {
       const minG = 1 / 500;
       const maxG = 1 / 2;
@@ -128,22 +125,12 @@
       return Math.pow(10, logMin + t * (logMax - logMin));
     }
 
-    // X span slider controls the half-width in decades around a fixed geometric center.
     function xHalfDecadesFromT(t) {
       return 0.8 + t * (3.0 - 0.8);
     }
 
-    // Y-axis min slider maps (log-space): 0 -> 1e-2, 1 -> 1e-10
-    function yMinFromT(t) {
-      const maxMin = 1e-2;
-      const minMin = 1e-10;
-      const logMax = Math.log10(maxMin);
-      const logMin = Math.log10(minMin);
-      return Math.pow(10, logMax + t * (logMin - logMax));
-    }
-
     const WIDTH = 520;
-    const HEIGHT = 360;
+    const HEIGHT = 380;
     const PAD = 16;
 
     function Panel({
@@ -156,16 +143,17 @@
       yMinDet,
       yMaxSys,
       xAxisLabel,
+      yAxisLabel,
       xMin,
       xMax,
       yDomainLog
     }) {
       const clipId = useId();
 
-      const plotX = PAD;
-      const plotY = PAD;
-      const plotW = WIDTH - 2 * PAD;
-      const plotH = HEIGHT - 2 * PAD;
+      const plotX = PAD + 44;      // extra room for y-axis label
+      const plotY = PAD + 6;
+      const plotW = WIDTH - (PAD + 44) - PAD;
+      const plotH = HEIGHT - (PAD + 34) - PAD; // extra room for x-axis label
 
       const x2px = useMemo(() => makeX2pxLocal(xMin, xMax, plotW), [xMin, xMax, plotW]);
       const y2px = useMemo(
@@ -197,30 +185,24 @@
             </defs>
 
             <g transform={`translate(${plotX},${plotY})`}>
+
+              {/* Y-axis label */}
+              <text
+                x={-36}
+                y={plotH / 2}
+                textAnchor="middle"
+                fontSize="14"
+                fill="currentColor"
+                opacity="0.80"
+                transform={`rotate(-90, ${-36}, ${plotH / 2})`}
+              >
+                {yAxisLabel}
+              </text>
+
               <g clipPath={`url(#${clipId})`}>
                 {spansBuilder({ x2px, y2px, plotW, plotH })}
 
-                {/* log-decade gridlines (visual cue that y is log) */}
-                {[
-                  yDomainLog.yMinPos,
-                  yDomainLog.yMinPos * 10,
-                  yDomainLog.yMinPos * 100,
-                  yDomainLog.yMinPos * 1000,
-                  yDomainLog.yMinPos * 10000,
-                ].map((yy, i) => (
-                  <line
-                    key={i}
-                    x1={0}
-                    x2={plotW}
-                    y1={y2px(yy)}
-                    y2={y2px(yy)}
-                    stroke="currentColor"
-                    strokeWidth="1"
-                    opacity="0.10"
-                  />
-                ))}
-
-                {/* detection floor */}
+                {/* Detection floor */}
                 <line
                   x1={0}
                   x2={plotW}
@@ -233,7 +215,7 @@
                   opacity="0.8"
                 />
 
-                {/* burnout ceiling */}
+                {/* Burnout threshold */}
                 <line
                   x1={0}
                   x2={plotW}
@@ -245,7 +227,7 @@
                   strokeLinecap="butt"
                 />
 
-                {/* curves */}
+                {/* True response */}
                 <path
                   d={truePath}
                   fill="none"
@@ -254,6 +236,8 @@
                   strokeDasharray="4 4"
                   strokeLinecap="butt"
                 />
+
+                {/* Observed response (clipped) */}
                 <path
                   d={obsPath}
                   fill="none"
@@ -263,11 +247,12 @@
                 />
               </g>
 
+              {/* X-axis label */}
               <text
                 x={plotW / 2}
                 y={plotH + 30}
                 textAnchor="middle"
-                fontSize="16"
+                fontSize="14"
                 fill="currentColor"
                 opacity="0.80"
               >
@@ -280,37 +265,31 @@
     }
 
     function Interactive4PLWidget() {
-      // Target abundance slider (as before)
       const [t, setT] = useState(0.62);
 
-      // Linearity band slider (as before): controls UPPER slope bound (more permissive -> expands left)
+      // Blue band slope control
       const fixedMinSlope = 0.10;
       const [maxSlope, setMaxSlope] = useState(1.15);
 
-      // Global burnout threshold slider (same on all channels)
+      // Global system ceiling (absolute units)
       const [burnoutY, setBurnoutY] = useState(0.90);
 
-      // X range slider
+      // X span and NIR gain
       const [xSpanT, setXSpanT] = useState(0.50);
-
-      // NIR gain slider (IR gain is squared)
       const [nirGainT, setNirGainT] = useState(0.42);
 
-      // NEW: Y-axis minimum slider (log)
-      const [yMinT, setYMinT] = useState(0.55);
-
-      // 4PL shape parameters (kept)
+      // 4PL shape parameters
       const b = 1.35;
       const c = 1e-2;
 
       const abundanceFrac = useMemo(() => abundanceFractionFromT(t), [t]);
       const abundancePctStr = useMemo(() => fmtPct(abundanceFrac), [abundanceFrac]);
 
-      // Baseline constant + max (kept from current version)
+      // Constant baseline (fixes the "signal too high" caused by baseline growing with loading)
       const a0 = 0.03;
       const d0 = 1.5;
 
-      // Derive xMin/xMax from slider, symmetric in log space around fixed center
+      // X domain
       const xCenterLog10 = -0.5;
       const xHalfDec = useMemo(() => xHalfDecadesFromT(xSpanT), [xSpanT]);
       const xMin = useMemo(() => Math.pow(10, xCenterLog10 - xHalfDec), [xHalfDec]);
@@ -356,42 +335,37 @@
         [nirTargetGain, irTargetGain]
       );
 
-      // Log y-axis domain: NEW yMinPos is controlled by slider
-      const yMinPos = useMemo(() => yMinFromT(yMinT), [yMinT]);
-      const yDomainLog = useMemo(() => ({ yMinPos, yMaxPos: 2.5 }), [yMinPos]);
+      // Y domain (absolute units)
+      const yDomainLog = useMemo(() => ({ yMinPos: 0.02, yMaxPos: 2.5 }), []);
 
       const panels = useMemo(() => {
         const EPS = 1e-12;
 
         return channels.map((ch) => {
+          // Constant baseline (no dependence on xTotal)
           const yBase = xs.map(() => a0);
 
-          // Absolute response (includes baseline)
-          const yAbsTrue = xs.map((xTotal, i) => {
+          // Absolute 4PL response (includes baseline)
+          const yTrue = xs.map((xTotal, i) => {
             const xTargetEff = Math.max(1e-16, abundanceFrac * xTotal * ch.targetGain);
             const a = yBase[i];
             const d = d0;
+
             const yRaw = fourPL(xTargetEff, a, b, c, d);
             const yScaled = a + (yRaw - a) * ch.signalGain;
             return yScaled;
           });
 
-          // Net plotted response (blank-subtracted)
-          const yTrue = yAbsTrue.map((y, i) => Math.max(0, y - yBase[i]));
+          // Observed response (floor + burnout clipping) in absolute units
+          const yObs = yTrue.map((y) => clamp(y, ch.yMinDet, burnoutY));
 
-          // Floors/ceilings in plotted units
-          const yMinDetPlot = Math.max(0, ch.yMinDet - a0);
-          const yMaxSysPlot = Math.max(1e-6, burnoutY - a0);
-
-          const yObs = yTrue.map((y) => clamp(y, yMinDetPlot, yMaxSysPlot));
-
-          // Burnout onset computed in absolute units
-          const idxBurn = yAbsTrue.findIndex((y) => y >= burnoutY);
+          // Burnout onset
+          const idxBurn = yTrue.findIndex((y) => y >= burnoutY);
           const xCutBurn = idxBurn === -1 ? Infinity : xs[Math.max(0, idxBurn)];
 
-          // Slope on net signal
+          // Slope computed on net signal (absolute minus baseline) to define "linearity"
           const logX = xs.map((x) => Math.log10(x));
-          const yNet = yTrue.map((yn) => Math.max(EPS, yn));
+          const yNet = yTrue.map((y, i) => Math.max(EPS, y - yBase[i]));
           const logY = yNet.map((yn) => Math.log10(yn));
 
           const slope = new Array(xs.length).fill(NaN);
@@ -404,34 +378,34 @@
           slope[slope.length - 1] = slope[slope.length - 2];
 
           const isBlue = xs.map((xTotal, i) => {
-            const withinSignalAbs = (yAbsTrue[i] >= ch.yMinDet) && (yAbsTrue[i] < burnoutY);
+            const withinSignal = (yTrue[i] >= ch.yMinDet) && (yTrue[i] < burnoutY);
             const withinSlope = (slope[i] >= slopeBand.min) && (slope[i] <= slopeBand.max);
             const beforeBurn = !(xCutBurn < Infinity && xTotal >= xCutBurn);
-            return withinSignalAbs && withinSlope && beforeBurn;
+            return withinSignal && withinSlope && beforeBurn;
           });
 
           const blueSpans = contiguousSpans(xs, isBlue);
 
           const spansBuilder = ({ x2px, y2px, plotW, plotH }) => (
             <>
-              {/* Below detection floor shading (plotted units) */}
+              {/* Below detection floor shading */}
               <rect
                 x={0}
-                y={y2px(yMinDetPlot)}
+                y={y2px(ch.yMinDet)}
                 width={plotW}
-                height={y2px(yDomainLog.yMinPos) - y2px(yMinDetPlot)}
+                height={y2px(yDomainLog.yMinPos) - y2px(ch.yMinDet)}
                 fill="currentColor"
                 opacity="0.06"
               />
 
-              {/* Blue: slope-based linear region */}
+              {/* Blue regions */}
               {blueSpans.map(([xA, xB], k) => (
                 <React.Fragment key={k}>
                   {rectForXSpanLocal(xA, xB, x2px, plotH, "#66b3ff", 0.18)}
                 </React.Fragment>
               ))}
 
-              {/* Red: burnout region from onset to xMax */}
+              {/* Red: burnout from onset to xMax */}
               {xCutBurn < xMax &&
                 rectForXSpanLocal(
                   Math.max(xCutBurn, xMin),
@@ -444,7 +418,7 @@
             </>
           );
 
-          return { ch, yTrue, yObs, spansBuilder, yMinDetPlot, yMaxSysPlot };
+          return { ch, yTrue, yObs, spansBuilder };
         });
       }, [
         channels,
@@ -467,9 +441,17 @@
         return "Very low abundance target (eg phospho)";
       }, [abundanceFrac]);
 
+      // Units (edit these to match your mental model)
+      const xUnit = "relative loading (arb. units)";
+      const yUnit = "signal (arb. units)";
+
       const xAxisLabel = useMemo(() => {
-        return `total sample loading (range: ${fmtSci(xMin, 1)} to ${fmtSci(xMax, 1)})`;
+        return `total sample loading, ${xUnit} (range: ${fmtSci(xMin, 1)} to ${fmtSci(xMax, 1)})`;
       }, [xMin, xMax]);
+
+      const yAxisLabel = useMemo(() => {
+        return `measured signal, ${yUnit} (log scale)`;
+      }, [yUnit]);
 
       return (
         <div className="w-full min-h-screen bg-gray-50 text-gray-900 p-4 text-base">
@@ -477,8 +459,8 @@
             <h1 className="text-2xl font-semibold mb-3">Interactive Burnout and Sensitivity Visualiser</h1>
 
             <p className="text-sm mb-4 text-gray-700">
-              Log y-axis only. Curves are plotted as blank-subtracted net signal (so "no target" is flat at 0).
-              Blue is computed from the curve: above floor, below burnout, and within the chosen log-log slope band.
+              Log y-axis. Curves are absolute 4PL responses including a constant baseline (a0), so "no target" sits at a0.
+              Blue is computed using log-log slope of the baseline-subtracted signal (y - a0), but the plotted curves remain absolute.
               Red is burnout (do not use) from the onset to the right edge.
             </p>
 
@@ -501,6 +483,9 @@
                     <span className="text-gray-600">Example: </span>
                     <span className="font-medium">{labelForAbundance}</span>
                   </div>
+                  <div className="mt-2 text-xs text-gray-600">
+                    a0 baseline (constant): <span className="font-mono">{a0.toFixed(3)}</span>, 4PL c: <span className="font-mono">{fmtSci(c, 2)}</span>, b: <span className="font-mono">{b.toFixed(2)}</span>
+                  </div>
                 </div>
 
                 <div className="col-span-12 lg:col-span-6">
@@ -508,8 +493,8 @@
                   <input
                     type="range"
                     min={0.20}
-                    max={1.60}
-                    step={0.01}
+                    max={1.34}
+                    step={0.005}
                     value={maxSlope}
                     onChange={(e) => setMaxSlope(parseFloat(e.target.value))}
                     className="w-full"
@@ -532,8 +517,7 @@
                     className="w-full"
                   />
                   <div className="mt-2 text-sm text-gray-700">
-                    Burnout y (absolute units): <span className="font-mono">{burnoutY.toFixed(2)}</span>
-                    <span className="text-gray-600"> (ceiling line is shown in net units)</span>
+                    Burnout y: <span className="font-mono">{burnoutY.toFixed(2)}</span> <span className="text-gray-600">{yUnit}</span>
                   </div>
                 </div>
 
@@ -550,24 +534,7 @@
                   />
                   <div className="mt-2 text-sm text-gray-700">
                     X range: <span className="font-mono">{fmtSci(xMin, 1)} to {fmtSci(xMax, 1)}</span>
-                    <span className="text-gray-600"> (symmetric in log space)</span>
-                  </div>
-                </div>
-
-                <div className="col-span-12 lg:col-span-6">
-                  <div className="text-sm font-medium mb-2">Y-axis minimum (log)</div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.005}
-                    value={yMinT}
-                    onChange={(e) => setYMinT(parseFloat(e.target.value))}
-                    className="w-full"
-                  />
-                  <div className="mt-2 text-sm text-gray-700">
-                    yMin: <span className="font-mono">{fmtSci(yDomainLog.yMinPos, 1)}</span>
-                    <span className="text-gray-600"> (lower values make log behaviour more obvious)</span>
+                    <span className="text-gray-600"> {xUnit}</span>
                   </div>
                 </div>
 
@@ -604,32 +571,17 @@
                     </li>
                     <li className="flex items-center gap-3">
                       <span className="inline-block w-4 h-4 rounded" style={{ background: "#66b3ff", opacity: 0.18 }} />
-                      Slope-based linear region (computed)
+                      Slope-based linear region (computed from baseline-subtracted signal)
                     </li>
                     <li className="flex items-center gap-3">
                       <span className="inline-block w-4 h-4 rounded" style={{ background: "#ff9999", opacity: 0.25 }} />
                       Burnout region (do not use)
                     </li>
-                    <li className="flex items-center gap-3">
-                      <span className="inline-block w-10 border-t-4 border-dashed border-gray-900" />
-                      Burnout threshold (global, shown in net units)
-                    </li>
-                    <li className="flex items-center gap-3">
-                      <span className="inline-block w-10 border-t-4 border-dashed border-gray-900" style={{ borderTopStyle: "dotted" }} />
-                      Detection floor (channel-dependent, net units)
-                    </li>
-                    <li className="flex items-center gap-3">
-                      <span className="inline-block w-10 border-t-4 border-gray-900" />
-                      Observed (after floor + burnout), net units
-                    </li>
-                    <li className="flex items-center gap-3">
-                      <span className="inline-block w-10 border-t-4 border-dashed border-gray-900" style={{ borderTopWidth: 3 }} />
-                      True assay response, net units
-                    </li>
                   </ul>
 
                   <div className="mt-5 text-xs text-gray-600 leading-relaxed">
-                    Net signal = (measured signal) minus (blank baseline). Y-axis minimum controls how many decades are visible.
+                    X-axis: {xUnit}. Y-axis: {yUnit} on a log scale. Baseline is constant (a0), so increasing total loading
+                    does not artificially push the whole curve upward when target is absent.
                   </div>
                 </div>
               </div>
@@ -644,9 +596,10 @@
                     yTrue={p.yTrue}
                     yObs={p.yObs}
                     spansBuilder={p.spansBuilder}
-                    yMinDet={p.yMinDetPlot}
-                    yMaxSys={p.yMaxSysPlot}
+                    yMinDet={p.ch.yMinDet}
+                    yMaxSys={burnoutY}
                     xAxisLabel={xAxisLabel}
+                    yAxisLabel={yAxisLabel}
                     xMin={xMin}
                     xMax={xMax}
                     yDomainLog={yDomainLog}
