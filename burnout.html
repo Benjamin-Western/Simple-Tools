@@ -5,7 +5,6 @@
   <title>4PL System Limit Visualizer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <!-- React + ReactDOM + Babel + Tailwind (CDN) -->
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -18,7 +17,6 @@
   <script type="text/babel" data-presets="react">
     const { useMemo, useState, useId } = React;
 
-    /* --------------------- Helpers --------------------- */
     function logspace(start, stop, num) {
       const arr = new Array(num);
       const logStart = Math.log10(start);
@@ -53,9 +51,12 @@
       };
     }
 
-    function makeY2pxLocal(ymin, ymax, plotH) {
+    function makeY2pxLogLocal(yminPos, ymaxPos, plotH) {
+      const lo = Math.log10(yminPos);
+      const hi = Math.log10(ymaxPos);
       return (y) => {
-        const v = (y - ymin) / (ymax - ymin);
+        const yy = Math.max(y, yminPos);
+        const v = (Math.log10(yy) - lo) / (hi - lo);
         return plotH - v * plotH;
       };
     }
@@ -73,21 +74,79 @@
       return Math.min(Math.max(y, lo), hi);
     }
 
-    // Slider t in [0,1] -> target abundance in % (log scale). Internally allows >100%
-    function abundancePercentFromT(t) {
-      const minP = 0.001;
-      const maxP = 1000; // internal "super abundant" region
-      const logMin = Math.log10(minP);
-      const logMax = Math.log10(maxP);
+    function abundanceFractionFromT(t) {
+      const minF = 1e-5;  // 0.00001%
+      const maxF = 0.5;   // 50%
+      const logMin = Math.log10(minF);
+      const logMax = Math.log10(maxF);
       return Math.pow(10, logMin + t * (logMax - logMin));
     }
 
-    /* --------------------- Panel --------------------- */
+    function contiguousSpans(xs, mask) {
+      const spans = [];
+      let inRun = false;
+      let runStart = 0;
+
+      for (let i = 0; i < mask.length; i++) {
+        if (mask[i] && !inRun) {
+          inRun = true;
+          runStart = i;
+        }
+        if ((!mask[i] || i === mask.length - 1) && inRun) {
+          const endIdx = mask[i] ? i : i - 1;
+          const xStart = xs[Math.max(0, runStart)];
+          const xEnd = xs[Math.min(xs.length - 1, endIdx)];
+          if (isFinite(xStart) && isFinite(xEnd) && xEnd > xStart) spans.push([xStart, xEnd]);
+          inRun = false;
+        }
+      }
+      return spans;
+    }
+
+    function fmtSci(x, sig = 2) {
+      if (!isFinite(x) || x <= 0) return String(x);
+      const e = Math.floor(Math.log10(x));
+      const m = x / Math.pow(10, e);
+      return `${m.toFixed(sig)}e${e >= 0 ? "+" : ""}${e}`;
+    }
+
+    function fmtPct(frac) {
+      const pct = frac * 100;
+      if (pct >= 1) return `${pct.toFixed(1)}%`;
+      if (pct >= 0.01) return `${pct.toFixed(3)}%`;
+      return `${pct.toExponential(2)}%`;
+    }
+
+    function nirGainFromT(t) {
+      const minG = 1 / 500;
+      const maxG = 1 / 2;
+      const logMin = Math.log10(minG);
+      const logMax = Math.log10(maxG);
+      return Math.pow(10, logMin + t * (logMax - logMin));
+    }
+
+    function xHalfDecadesFromT(t) {
+      return 0.8 + t * (3.0 - 0.8);
+    }
+
     const WIDTH = 520;
     const HEIGHT = 360;
     const PAD = 16;
 
-    function Panel({ title, subtitle, pathsData, spansBuilder, yMinDet, yMaxSys, xAxisLabel }) {
+    function Panel({
+      title,
+      subtitle,
+      xs,
+      yTrue,
+      yObs,
+      spansBuilder,
+      yMinDet,
+      yMaxSys,
+      xAxisLabel,
+      xMin,
+      xMax,
+      yDomainLog
+    }) {
       const clipId = useId();
 
       const plotX = PAD;
@@ -95,17 +154,14 @@
       const plotW = WIDTH - 2 * PAD;
       const plotH = HEIGHT - 2 * PAD;
 
-      const x2px = useMemo(() => makeX2pxLocal(1e-2, 1e1, plotW), [plotW]);
-      const y2px = useMemo(() => makeY2pxLocal(0, 1.2, plotH), [plotH]);
+      const x2px = useMemo(() => makeX2pxLocal(xMin, xMax, plotW), [xMin, xMax, plotW]);
+      const y2px = useMemo(
+        () => makeY2pxLogLocal(yDomainLog.yMinPos, yDomainLog.yMaxPos, plotH),
+        [yDomainLog, plotH]
+      );
 
-      const truePath = useMemo(
-        () => linePath(pathsData.xs, pathsData.yTrue, x2px, y2px),
-        [pathsData, x2px, y2px]
-      );
-      const obsPath = useMemo(
-        () => linePath(pathsData.xs, pathsData.yObs, x2px, y2px),
-        [pathsData, x2px, y2px]
-      );
+      const truePath = useMemo(() => linePath(xs, yTrue, x2px, y2px), [xs, yTrue, x2px, y2px]);
+      const obsPath = useMemo(() => linePath(xs, yObs, x2px, y2px), [xs, yObs, x2px, y2px]);
 
       return (
         <div className="relative bg-white rounded-2xl shadow p-3">
@@ -131,7 +187,6 @@
               <g clipPath={`url(#${clipId})`}>
                 {spansBuilder({ x2px, y2px, plotW, plotH })}
 
-                {/* detection floor */}
                 <line
                   x1={0}
                   x2={plotW}
@@ -144,7 +199,6 @@
                   opacity="0.8"
                 />
 
-                {/* burnout threshold */}
                 <line
                   x1={0}
                   x2={plotW}
@@ -156,7 +210,6 @@
                   strokeLinecap="butt"
                 />
 
-                {/* curves */}
                 <path
                   d={truePath}
                   fill="none"
@@ -174,7 +227,6 @@
                 />
               </g>
 
-              {/* x-axis title (outside clip so it stays visible) */}
               <text
                 x={plotW / 2}
                 y={plotH + 30}
@@ -185,196 +237,158 @@
               >
                 {xAxisLabel}
               </text>
-
-              <rect
-                x={0}
-                y={0}
-                width={plotW}
-                height={plotH}
-                fill="none"
-                stroke="transparent"
-                rx="8"
-                ry="8"
-              />
             </g>
           </svg>
         </div>
       );
     }
 
-    /* --------------------- App --------------------- */
     function Interactive4PLWidget() {
-      const [t, setT] = useState(0.78);
+      const [t, setT] = useState(0.62);
 
-      // Base 4PL shape
-      const b = 1.4;
-      const c = 0.35;
+      const fixedMinSlope = 0.10;
+      const [maxSlope, setMaxSlope] = useState(1.15);
 
-      // x range
-      const xMin = 1e-2;
-      const xMax = 1e1;
+      const [burnoutY, setBurnoutY] = useState(0.90);
+      const [xSpanT, setXSpanT] = useState(0.50);
+      const [nirGainT, setNirGainT] = useState(0.42);
 
-      // "validated linear" band centered around c
-      const linFactor = 3.0;
-      const xLow = c / linFactor;
-      const xHigh = c * linFactor;
+      // 4PL shape parameters (unchanged)
+      const b = 1.35;
+      const c = 1e-2;
 
-      // UI abundance in % (internal can exceed 100)
-      const abundancePct = useMemo(() => abundancePercentFromT(t), [t]);
-      const displayedPct = Math.min(abundancePct, 100);
+      const abundanceFrac = useMemo(() => abundanceFractionFromT(t), [t]);
+      const abundancePctStr = useMemo(() => fmtPct(abundanceFrac), [abundanceFrac]);
 
-      // Ease-in so chemi is "best channel" for longer
-      const easedT = useMemo(() => Math.pow(t, 2.2), [t]);
+      // IMPORTANT: baseline is now constant (no matrix term), so "no target" can sit at 0 after subtraction
+      const a0 = 0.03;
+      const d0 = 1.5;
 
-      // Convert eased slider position to amplitude factor (keep your behavior)
-      const abundanceFactor = useMemo(() => {
-        const p = abundancePercentFromT(easedT);
-        const logMin = Math.log10(0.001);
-        const logMax = Math.log10(100);
-        const u = (Math.log10(p) - logMin) / (logMax - logMin);
-        return 0.03 + u * (3.0 - 0.03);
-      }, [easedT]);
+      const xCenterLog10 = -0.5;
+      const xHalfDec = useMemo(() => xHalfDecadesFromT(xSpanT), [xSpanT]);
+      const xMin = useMemo(() => Math.pow(10, xCenterLog10 - xHalfDec), [xHalfDec]);
+      const xMax = useMemo(() => Math.pow(10, xCenterLog10 + xHalfDec), [xHalfDec]);
 
-      // Move a and d together
-      const a = 0.05 * abundanceFactor;
-      const d = 1.00 * abundanceFactor;
+      const xs = useMemo(() => logspace(xMin, xMax, 700), [xMin, xMax]);
 
-      const xs = useMemo(() => logspace(xMin, xMax, 500), []);
+      const slopeBand = useMemo(() => {
+        const mx = Math.max(maxSlope, fixedMinSlope + 0.01);
+        return { min: fixedMinSlope, max: mx };
+      }, [maxSlope]);
 
-      // Channel fixed properties (burnout ceilings fixed; LLOQs for NIR/IR will be auto-set)
-      const channelBases = useMemo(
+      const nirTargetGain = useMemo(() => nirGainFromT(nirGainT), [nirGainT]);
+      const irTargetGain = useMemo(() => nirTargetGain * nirTargetGain, [nirTargetGain]);
+
+      const channels = useMemo(
         () => [
           {
             key: "chemi",
             title: "Chemiluminescence",
-            subtitle: "Highest sensitivity: best LLOQ, highest burnout risk",
-            sensitivity: 1.45,
-            yMinDetFixed: 0.05,
-            yMaxSys: 0.90,
+            subtitle: "Highest effective sensitivity: best low-end, most likely to saturate early",
+            targetGain: 1.0,
+            signalGain: 1.0,
+            yMinDet: 0.03,
           },
           {
             key: "nir",
             title: "NIR",
-            subtitle: "Medium sensitivity: can burn out in extreme cases",
-            sensitivity: 0.65,
-            yMinDet: 0.2,
-            yMaxSys: 0.80,
+            subtitle: "Right-shift set by NIR targetGain slider",
+            targetGain: nirTargetGain,
+            signalGain: 1.0,
+            yMinDet: 0.03,
           },
           {
             key: "ir",
             title: "IR",
-            subtitle: "Lowest sensitivity: LLOQ is worse, burnout is rare",
-            sensitivity: 0.24,
-            yMaxSys: 1.25, // effectively "never burns out"
+            subtitle: "IR targetGain = (NIR targetGain)²",
+            targetGain: irTargetGain,
+            signalGain: 1.0,
+            yMinDet: 0.03,
           },
         ],
-        []
+        [nirTargetGain, irTargetGain]
       );
 
-      // Auto-calibrate NIR + IR LLOQ so the handovers happen in the right order.
-      // We do this based on the signal at xHigh (high concentration end of the linear window).
-      const calibratedChannels = useMemo(() => {
-        // helper: compute amplitudeFactor for a hypothetical slider position tt (0..1)
-        const ampAt = (tt) => {
-          const et = Math.pow(tt, 2.2);
-          const p = abundancePercentFromT(et);
-          const logMin = Math.log10(0.001);
-          const logMax = Math.log10(100);
-          const u = (Math.log10(p) - logMin) / (logMax - logMin);
-          return 0.03 + u * (3.0 - 0.03);
-        };
+      // Log y-axis: allow tiny values (we will plot blank-subtracted y, which can be 0)
+      const yDomainLog = useMemo(() => ({ yMinPos: 1e-4, yMaxPos: 2.5 }), []);
 
-        const chemi = channelBases.find((x) => x.key === "chemi");
-        const nir = channelBases.find((x) => x.key === "nir");
-        const ir = channelBases.find((x) => x.key === "ir");
-
-        // Scan slider to find when chemi and nir start to burn at xHigh
-        const N = 1001;
-        let tChemiBurn = 1.0;
-        let tNirBurn = 1.0;
-
-        for (let i = 0; i < N; i++) {
-          const tt = i / (N - 1);
-          const amp = ampAt(tt);
-          const aa = 0.05 * amp;
-          const dd = 1.00 * amp;
-
-          const yChemiHigh = fourPL(xHigh, aa, b, c, dd) * chemi.sensitivity;
-          const yNirHigh = fourPL(xHigh, aa, b, c, dd) * nir.sensitivity;
-
-          if (tChemiBurn === 1.0 && yChemiHigh >= chemi.yMaxSys) tChemiBurn = tt;
-          if (tNirBurn === 1.0 && yNirHigh >= nir.yMaxSys) tNirBurn = tt;
-        }
-
-        // Targets:
-        // NIR should become detectable shortly BEFORE chemi starts to burn
-        // IR should become detectable shortly BEFORE NIR starts to burn
-        const deltaNir = 0.06;
-        const deltaIr = 0.05;
-
-        const tNirDetectTarget = Math.max(0, tChemiBurn - deltaNir);
-        const tIrDetectTarget = Math.max(0, tNirBurn - deltaIr);
-
-        // Compute what the signal is at xHigh at those targets, and use that as the LLOQ
-        // (so detection starts at high concentrations first, then expands)
-        const ampN = ampAt(tNirDetectTarget);
-        const aN = 0.05 * ampN;
-        const dN = 1.00 * ampN;
-        const nirLLOQ = fourPL(xHigh, aN, b, c, dN) * nir.sensitivity;
-
-        const ampI = ampAt(tIrDetectTarget);
-        const aI = 0.05 * ampI;
-        const dI = 1.00 * ampI;
-        const irLLOQ = fourPL(xHigh, aI, b, c, dI) * ir.sensitivity;
-
-        // Add tiny padding so we avoid accidental overlap due to sampling granularity
-        const nirLLOQPad = nirLLOQ * 1.02;
-        const irLLOQPad = irLLOQ * 1.02;
-
-        return channelBases.map((ch) => {
-          if (ch.key === "chemi") return { ...ch, yMinDet: ch.yMinDetFixed };
-          if (ch.key === "nir") return { ...ch, yMinDet: nirLLOQPad };
-          if (ch.key === "ir") return { ...ch, yMinDet: irLLOQPad };
-          return ch;
-        });
-      }, [channelBases, b, c, xHigh]);
-
-      // Build per-panel curves and span shading
       const panels = useMemo(() => {
-        return calibratedChannels.map((ch) => {
-          const yTrue = xs.map((x) => fourPL(x, a, b, c, d) * ch.sensitivity);
-          const yObs = yTrue.map((y) => clamp(y, ch.yMinDet, ch.yMaxSys));
+        const EPS = 1e-12;
 
-          const idxBurn = yTrue.findIndex((y) => y >= ch.yMaxSys);
-          const xCutBurn = idxBurn === -1 ? Infinity : (idxBurn === 0 ? xMin : xs[idxBurn]);
+        return channels.map((ch) => {
+          // Constant baseline
+          const yBase = xs.map(() => a0);
 
-          const idxDet = yTrue.findIndex((y) => y >= ch.yMinDet);
-          const xCutDet = idxDet === -1 ? Infinity : (idxDet === 0 ? xMin : xs[idxDet]);
+          // TRUE absolute response (includes baseline)
+          const yAbsTrue = xs.map((xTotal, i) => {
+            const xTargetEff = Math.max(1e-16, abundanceFrac * xTotal * ch.targetGain);
+            const a = yBase[i];
+            const d = d0;
+
+            const yRaw = fourPL(xTargetEff, a, b, c, d);
+            const yScaled = a + (yRaw - a) * ch.signalGain;
+            return yScaled;
+          });
+
+          // PLOT response: blank-subtracted (net signal), clipped at 0 so "no target" is flat at 0
+          const yTrue = yAbsTrue.map((y, i) => Math.max(0, y - yBase[i]));
+
+          // Observed (after floor + burnout) in the same plotted units
+          const yMinDetPlot = Math.max(0, ch.yMinDet - a0);
+          const yMaxSysPlot = Math.max(1e-6, burnoutY - a0);
+          const yObs = yTrue.map((y) => clamp(y, yMinDetPlot, yMaxSysPlot));
+
+          // Burnout onset computed on absolute signal (physical saturation), then drawn in x-space
+          const idxBurn = yAbsTrue.findIndex((y) => y >= burnoutY);
+          const xCutBurn = idxBurn === -1 ? Infinity : xs[Math.max(0, idxBurn)];
+
+          // Slope computed on net signal (already baseline-subtracted)
+          const logX = xs.map((x) => Math.log10(x));
+          const yNet = yTrue.map((yn) => Math.max(EPS, yn));
+          const logY = yNet.map((yn) => Math.log10(yn));
+
+          const slope = new Array(xs.length).fill(NaN);
+          for (let i = 1; i < xs.length - 1; i++) {
+            const dLogX = logX[i + 1] - logX[i - 1];
+            if (Math.abs(dLogX) < 1e-12) continue;
+            slope[i] = (logY[i + 1] - logY[i - 1]) / dLogX;
+          }
+          slope[0] = slope[1];
+          slope[slope.length - 1] = slope[slope.length - 2];
+
+          const isBlue = xs.map((xTotal, i) => {
+            const withinSignal = (yAbsTrue[i] >= ch.yMinDet) && (yAbsTrue[i] < burnoutY);
+            const withinSlope = (slope[i] >= slopeBand.min) && (slope[i] <= slopeBand.max);
+            const beforeBurn = !(xCutBurn < Infinity && xTotal >= xCutBurn);
+            return withinSignal && withinSlope && beforeBurn;
+          });
+
+          const blueSpans = contiguousSpans(xs, isBlue);
 
           const spansBuilder = ({ x2px, y2px, plotW, plotH }) => (
             <>
+              {/* Below detection floor shading (in plotted units) */}
               <rect
                 x={0}
-                y={y2px(ch.yMinDet)}
+                y={y2px(yMinDetPlot)}
                 width={plotW}
-                height={y2px(0) - y2px(ch.yMinDet)}
+                height={y2px(yDomainLog.yMinPos) - y2px(yMinDetPlot)}
                 fill="currentColor"
                 opacity="0.06"
               />
 
-              {rectForXSpanLocal(
-                Math.max(xLow, xCutDet),
-                Math.min(xHigh, xCutBurn),
-                x2px,
-                plotH,
-                "#66b3ff",
-                0.18
-              )}
+              {/* Blue regions */}
+              {blueSpans.map(([xA, xB], k) => (
+                <React.Fragment key={k}>
+                  {rectForXSpanLocal(xA, xB, x2px, plotH, "#66b3ff", 0.18)}
+                </React.Fragment>
+              ))}
 
-              {xCutBurn < xHigh &&
+              {/* Red: burnout from onset to xMax */}
+              {xCutBurn < xMax &&
                 rectForXSpanLocal(
-                  Math.max(xCutBurn, xLow),
-                  xHigh,
+                  Math.max(xCutBurn, xMin),
+                  xMax,
                   x2px,
                   plotH,
                   "#ff9999",
@@ -383,56 +397,134 @@
             </>
           );
 
-          return { ch, yTrue, yObs, spansBuilder };
+          return { ch, yTrue, yObs, spansBuilder, yMinDetPlot, yMaxSysPlot };
         });
-      }, [calibratedChannels, xs, a, b, c, d, xHigh, xLow, xMin]);
-
-      // Suggested example based on when burnout begins
-      const chemiPanel = panels.find((p) => p.ch.key === "chemi");
-      const nirPanel = panels.find((p) => p.ch.key === "nir");
-
-      const chemiBurning = chemiPanel ? chemiPanel.yTrue.some((y) => y >= chemiPanel.ch.yMaxSys) : false;
-      const nirBurning = nirPanel ? nirPanel.yTrue.some((y) => y >= nirPanel.ch.yMaxSys) : false;
+      }, [
+        channels,
+        xs,
+        a0,
+        d0,
+        b,
+        c,
+        abundanceFrac,
+        slopeBand,
+        burnoutY,
+        xMin,
+        xMax,
+        yDomainLog
+      ]);
 
       const labelForAbundance = useMemo(() => {
-        if (nirBurning) return "Recombinant protein (very abundant), IR-friendly";
-        if (chemiBurning) return "Loading control (abundant), NIR-friendly";
-        return "Phospho target (very low abundance), chemiluminescence-friendly";
-      }, [chemiBurning, nirBurning]);
+        if (abundanceFrac >= 1e-2) return "Very abundant target (housekeeper / overexpressed)";
+        if (abundanceFrac >= 1e-4) return "Moderate abundance target";
+        return "Very low abundance target (eg phospho)";
+      }, [abundanceFrac]);
+
+      const xAxisLabel = useMemo(() => {
+        return `total sample loading (range: ${fmtSci(xMin, 1)} to ${fmtSci(xMax, 1)})`;
+      }, [xMin, xMax]);
 
       return (
         <div className="w-full min-h-screen bg-gray-50 text-gray-900 p-4 text-base">
           <div className="max-w-[1600px] mx-auto">
             <h1 className="text-2xl font-semibold mb-3">Interactive Burnout and Sensitivity Visualiser</h1>
 
-            <p className="text-sm mb-6 text-gray-700">
-              The slider changes target abundance in the sample, which shifts both the lower plateau (a, background) and the upper plateau (d, max signal).
-              Each detection channel has a different detection floor (LLOQ driver) and a different burnout ceiling (saturation driver).
+            <p className="text-sm mb-4 text-gray-700">
+              Log y-axis only. Curves are plotted as blank-subtracted net signal (so "no target" is flat at 0).
+              Blue is computed from the curve: above floor, below burnout, and within the chosen log-log slope band.
+              Red is burnout (do not use) from the onset to the right edge.
             </p>
 
             <div className="bg-white rounded-2xl shadow p-4 mb-6">
-              <div className="flex items-center gap-4 flex-wrap">
-                <label className="text-lg font-semibold whitespace-nowrap">
-                  Try samples with more or less abundant target
-                </label>
-
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.005}
-                  value={t}
-                  onChange={(e) => setT(parseFloat(e.target.value))}
-                  className="w-full max-w-[760px]"
-                />
-
-                <div className="font-mono text-sm whitespace-nowrap">
-                  The protein of interest represents{" "}
-                  {displayedPct.toFixed(displayedPct >= 10 ? 0 : displayedPct >= 1 ? 2 : 4)}% of all proteins in your sample
+              <div className="grid grid-cols-12 gap-4 items-center">
+                <div className="col-span-12 lg:col-span-6">
+                  <div className="text-sm font-medium mb-2">Target fraction inside the loaded sample</div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.005}
+                    value={t}
+                    onChange={(e) => setT(parseFloat(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="mt-2 text-sm text-gray-700">
+                    <span className="font-mono">{abundancePctStr}</span>
+                    <span className="text-gray-600">  </span>
+                    <span className="text-gray-600">Example: </span>
+                    <span className="font-medium">{labelForAbundance}</span>
+                  </div>
                 </div>
 
-                <div className="text-sm text-gray-600 w-full mt-2">
-                  Suggested example: <span className="font-medium">{labelForAbundance}</span>
+                <div className="col-span-12 lg:col-span-6">
+                  <div className="text-sm font-medium mb-2">Linearity band (blue): expand to the left</div>
+                  <input
+                    type="range"
+                    min={0.20}
+                    max={1.60}
+                    step={0.01}
+                    value={maxSlope}
+                    onChange={(e) => setMaxSlope(parseFloat(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="mt-2 text-sm text-gray-700">
+                    Slope band: <span className="font-mono">{slopeBand.min.toFixed(2)} to {slopeBand.max.toFixed(2)}</span>
+                    <span className="text-gray-600"> (higher max lets blue extend left)</span>
+                  </div>
+                </div>
+
+                <div className="col-span-12 lg:col-span-6">
+                  <div className="text-sm font-medium mb-2">Burnout threshold (all channels)</div>
+                  <input
+                    type="range"
+                    min={0.20}
+                    max={1.40}
+                    step={0.01}
+                    value={burnoutY}
+                    onChange={(e) => setBurnoutY(parseFloat(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="mt-2 text-sm text-gray-700">
+                    Burnout y (absolute units): <span className="font-mono">{burnoutY.toFixed(2)}</span>
+                    <span className="text-gray-600"> (plot uses net signal, so dashed ceiling is burnout minus baseline)</span>
+                  </div>
+                </div>
+
+                <div className="col-span-12 lg:col-span-6">
+                  <div className="text-sm font-medium mb-2">X-axis span (all channels)</div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.005}
+                    value={xSpanT}
+                    onChange={(e) => setXSpanT(parseFloat(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="mt-2 text-sm text-gray-700">
+                    X range: <span className="font-mono">{fmtSci(xMin, 1)} to {fmtSci(xMax, 1)}</span>
+                    <span className="text-gray-600"> (symmetric in log space)</span>
+                  </div>
+                </div>
+
+                <div className="col-span-12">
+                  <div className="text-sm font-medium mb-2">NIR targetGain (IR = NIR²)</div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.005}
+                    value={nirGainT}
+                    onChange={(e) => setNirGainT(parseFloat(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="mt-2 text-sm text-gray-700">
+                    NIR targetGain: <span className="font-mono">{fmtSci(nirTargetGain, 2)}</span>
+                    <span className="text-gray-600">  </span>
+                    IR targetGain: <span className="font-mono">{fmtSci(irTargetGain, 2)}</span>
+                    <span className="text-gray-600">  </span>
+                    (Chemi targetGain is 1.00)
+                  </div>
                 </div>
               </div>
             </div>
@@ -448,33 +540,32 @@
                     </li>
                     <li className="flex items-center gap-3">
                       <span className="inline-block w-4 h-4 rounded" style={{ background: "#66b3ff", opacity: 0.18 }} />
-                      Validated linear range (detectable)
+                      Slope-based linear region (computed)
                     </li>
                     <li className="flex items-center gap-3">
                       <span className="inline-block w-4 h-4 rounded" style={{ background: "#ff9999", opacity: 0.25 }} />
-                      Lost due to burnout
+                      Burnout region (do not use)
                     </li>
                     <li className="flex items-center gap-3">
                       <span className="inline-block w-10 border-t-4 border-dashed border-gray-900" />
-                      Burnout threshold (channel-dependent)
+                      Burnout threshold (global, shown in net units)
                     </li>
                     <li className="flex items-center gap-3">
                       <span className="inline-block w-10 border-t-4 border-dashed border-gray-900" style={{ borderTopStyle: "dotted" }} />
-                      Detection floor (channel-dependent)
+                      Detection floor (channel-dependent, net units)
                     </li>
                     <li className="flex items-center gap-3">
                       <span className="inline-block w-10 border-t-4 border-gray-900" />
-                      Observed (after floor + ceiling)
+                      Observed (after floor + burnout), net units
                     </li>
                     <li className="flex items-center gap-3">
                       <span className="inline-block w-10 border-t-4 border-dashed border-gray-900" style={{ borderTopWidth: 3 }} />
-                      True assay response
+                      True assay response, net units
                     </li>
                   </ul>
 
                   <div className="mt-5 text-xs text-gray-600 leading-relaxed">
-                    Interpretation: a is baseline/background and d is max signal. Changing target abundance shifts both together in this simplified model.
-                    Lower sensitivity channels have a higher detection floor, so LLOQ worsens.
+                    Net signal = (measured signal) minus (blank baseline). This makes "no target" sit at 0 and makes channel targetGain differences visible at low abundance.
                   </div>
                 </div>
               </div>
@@ -484,12 +575,17 @@
                   <Panel
                     key={p.ch.key}
                     title={p.ch.title}
-                    subtitle={p.ch.subtitle}
-                    pathsData={{ xs, yTrue: p.yTrue, yObs: p.yObs }}
+                    subtitle={`${p.ch.subtitle}  (targetGain=${fmtSci(p.ch.targetGain, 2)})`}
+                    xs={xs}
+                    yTrue={p.yTrue}
+                    yObs={p.yObs}
                     spansBuilder={p.spansBuilder}
-                    yMinDet={p.ch.yMinDet}
-                    yMaxSys={p.ch.yMaxSys}
-                    xAxisLabel="sample concentration (μg/mL)"
+                    yMinDet={p.yMinDetPlot}
+                    yMaxSys={p.yMaxSysPlot}
+                    xAxisLabel={xAxisLabel}
+                    xMin={xMin}
+                    xMax={xMax}
+                    yDomainLog={yDomainLog}
                   />
                 ))}
               </div>
