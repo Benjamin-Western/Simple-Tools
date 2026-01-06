@@ -54,6 +54,7 @@
     function makeY2pxLogLocal(yminPos, ymaxPos, plotH) {
       const lo = Math.log10(yminPos);
       const hi = Math.log10(ymaxPos);
+      console.log("LOG MAPPER ACTIVE");
       return (y) => {
         const yy = Math.max(y, yminPos);
         const v = (Math.log10(yy) - lo) / (hi - lo);
