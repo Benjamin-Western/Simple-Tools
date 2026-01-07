@@ -73,9 +73,9 @@
     function clamp(y, lo, hi) {
       return Math.min(Math.max(y, lo), hi);
     }
-
+    
     function abundanceFractionFromT(t) {
-      const minF = 1e-5;
+      const minF = 1e-4;
       const maxF = 0.5;
       const logMin = Math.log10(minF);
       const logMax = Math.log10(maxF);
@@ -115,23 +115,17 @@
       if (x === 0) return "0";
 
       const ax = Math.abs(x);
-      
 
-      // For values in [0.01, 1000): show as plain decimals with minimal needed decimals.
-      // This will produce labels like: 0.02, 0.2, 2
       if (ax >= 0.01 && ax < 1000) {
-        // pick decimals based on magnitude
         let decimals = 0;
-        if (ax < 0.1) decimals = 2;      // 0.02, 0.05
-        else if (ax < 1) decimals = 1;   // 0.2, 0.5
-        else decimals = 0;              // 2, 5, 10
+        if (ax < 0.1) decimals = 2;
+        else if (ax < 1) decimals = 1;
+        else decimals = 0;
 
-        // round, then strip trailing zeros
         const s = x.toFixed(decimals);
         return s.replace(/\.0+$/, "").replace(/(\.\d*[1-9])0+$/, "$1");
       }
 
-      // Otherwise fall back to scientific
       return fmtSci(x, 1);
     }
 
@@ -154,7 +148,7 @@
       return 0.8 + t * (3.0 - 0.8);
     }
 
-    // 1-2-5 ticks per decade, much nicer visually on log axes
+    // 1-2-5 ticks per decade
     function logTicks125(min, max) {
       if (!(min > 0) || !(max > 0) || max <= min) return [];
       const ticks = [];
@@ -169,7 +163,6 @@
         }
       }
       ticks.sort((a, b) => a - b);
-      // de-dup with tolerance
       const out = [];
       for (const v of ticks) {
         if (out.length === 0 || Math.abs(Math.log10(v) - Math.log10(out[out.length - 1])) > 1e-6) out.push(v);
@@ -177,46 +170,42 @@
       return out;
     }
 
-    function uniqueSorted(vals) {
-      const v = vals.filter((x) => isFinite(x) && x > 0).slice().sort((a, b) => a - b);
-      const out = [];
-      for (const x of v) {
-        if (out.length === 0 || Math.abs(Math.log10(x) - Math.log10(out[out.length - 1])) > 1e-6) out.push(x);
-      }
-      return out;
-    }
-
+    // Reduce graph width ~50% by shrinking SVG coordinate width
     const WIDTH = 520;
-    const HEIGHT = 380;
-    const PAD = 16;
 
-    function Panel({
-      title,
-      subtitle,
+    function ChannelRow({
+      ch,
       xs,
       yTrue,
       yObs,
       spansBuilder,
       yMinDet,
       yMaxSys,
-      xAxisLabel,
-      yAxisLabel,
       xMin,
       xMax,
-      yDomainLog
+      yDomainLog,
+      showXAxis,
+      xAxisLabel,
+      yAxisLabel,
+      rowH,
     }) {
       const clipId = useId();
-      
-      // Layout: extra margins for tick labels
-      const leftMargin = PAD + 48;
-      const rightMargin = PAD + 12;
-      const topMargin = PAD + 8;
-      const bottomMargin = PAD + 36;
 
-      const plotX = leftMargin;
-      const plotY = topMargin;
-      const plotW = WIDTH - leftMargin - rightMargin;
-      const plotH = HEIGHT - topMargin - bottomMargin;
+      // Single knob: negative = move everything left, positive = right
+      const xShift = -Math.min(200, WIDTH * 0.25);
+
+      // Layout
+      const rowLeftMargin = 16 + 110;
+      const rowRightMargin = 16 + 14;
+      const rowTopMargin = 10;
+      const rowBottomMargin = showXAxis ? 54 : 18;
+
+      const plotW = WIDTH - rowLeftMargin - rowRightMargin;
+      const plotH = rowH - rowTopMargin - rowBottomMargin;
+
+      // Apply shift consistently
+      const plotX = rowLeftMargin + xShift;
+      const plotY = rowTopMargin;
 
       const x2px = useMemo(() => makeX2pxLocal(xMin, xMax, plotW), [xMin, xMax, plotW]);
       const y2px = useMemo(
@@ -229,50 +218,52 @@
 
       const xTicks = useMemo(() => logTicks125(xMin, xMax), [xMin, xMax]);
 
-      // Y ticks: 1-2-5 ticks plus force-include yMinDet and yMaxSys so the axis matches what you draw
-      const yTicks = useMemo(() => {
-        const base = logTicks125(yDomainLog.yMinPos, yDomainLog.yMaxPos);
-        return uniqueSorted([...base, yMinDet, yMaxSys]);
-      }, [yDomainLog, yMinDet, yMaxSys]);
-
       return (
-        <div className="relative bg-white rounded-2xl shadow p-3">
-          <div className="mb-2" style={{ minHeight: 44 }}>
-            <div className="text-sm font-medium leading-tight">{title}</div>
-            {subtitle ? (
-              <div className="text-xs text-gray-600 mt-0.5 leading-tight">
-                {subtitle}
-              </div>
-            ) : null}
-          </div>
-
+        <div className="relative">
           <svg
-            viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+            viewBox={`0 0 ${WIDTH} ${rowH}`}
             width="100%"
-            height={HEIGHT}
-            className="w-full rounded-xl block"
+            height={rowH}
+            className="w-full block"
             preserveAspectRatio="xMidYMid meet"
           >
             <defs>
+              {/* IMPORTANT: clip rect is in user space, so it must include plotX/plotY */}
               <clipPath id={clipId} clipPathUnits="userSpaceOnUse">
-                <rect x={0} y={0} width={plotW} height={plotH} rx="8" ry="8" />
+                <rect x={plotX} y={plotY} width={plotW} height={plotH} rx="8" ry="8" />
               </clipPath>
             </defs>
 
-            <g transform={`translate(${plotX},${plotY})`}>
-              <text
-                x={-24}
-                y={plotH / 2}
-                textAnchor="middle"
-                fontSize="18"
-                fill="currentColor"
-                opacity="0.90"
-                transform={`rotate(-90, ${-24}, ${plotH / 2})`} 
-              >
-                {yAxisLabel}
-              </text>
-              
-              <g clipPath={`url(#${clipId})`}>
+            {/* Channel label moves with the plot */}
+            <text
+              x={18 + xShift}
+              y={plotY + plotH / 2}
+              textAnchor="start"
+              fontSize="22"
+              fontWeight="600"
+              fill="currentColor"
+              opacity="0.95"
+              dominantBaseline="middle"
+            >
+              {ch.shortLabel}
+            </text>
+
+            {/* Y axis title moves AND rotates around the shifted pivot */}
+            <text
+              x={92 + xShift}
+              y={plotY + plotH / 2}
+              textAnchor="middle"
+              fontSize="14"
+              fill="currentColor"
+              opacity="0.85"
+              transform={`rotate(-90, ${92 + xShift}, ${plotY + plotH / 2})`}
+            >
+              {yAxisLabel}
+            </text>
+
+            {/* Plot (clipped in user space) */}
+            <g clipPath={`url(#${clipId})`}>
+              <g transform={`translate(${plotX},${plotY})`}>
                 {spansBuilder({ x2px, y2px, plotW, plotH })}
 
                 {/* Detection floor */}
@@ -319,25 +310,96 @@
                   strokeLinecap="butt"
                 />
               </g>
-
-              {/* X axis label */}
-              <text
-                x={plotW / 2}
-                y={plotH + 28}
-                textAnchor="middle"
-                fontSize="18"
-                fill="currentColor"
-                opacity="0.90"
-              >
-                {xAxisLabel}
-              </text>
             </g>
+
+            {/* X axis ticks + label only on bottom row */}
+            {showXAxis ? (
+              <g transform={`translate(${plotX},${plotY})`}>
+                {xTicks.map((xt, i) => {
+                  const X = x2px(xt);
+                  return (
+                    <g key={i} transform={`translate(${X}, ${plotH})`}>
+                      <line x1={0} x2={0} y1={0} y2={6} stroke="currentColor" opacity="0.5" />
+                      <text
+                        x={0}
+                        y={20}
+                        textAnchor="middle"
+                        fontSize="12"
+                        fill="currentColor"
+                        opacity="0.8"
+                      >
+                        {fmtTick(xt)}
+                      </text>
+                    </g>
+                  );
+                })}
+
+                <text
+                  x={plotW / 2}
+                  y={plotH + 44}
+                  textAnchor="middle"
+                  fontSize="18"
+                  fill="currentColor"
+                  opacity="0.90"
+                >
+                  {xAxisLabel}
+                </text>
+              </g>
+            ) : null}
           </svg>
+
+          {/* Subtitle stays pinned to the panel edge (does not overlap plot) */}
+          <div className="absolute top-2 right-3 text-xs text-gray-600 max-w-[420px] text-right">
+            <span className="font-medium text-gray-800">{ch.title}</span>
+            <span className="text-gray-600">: {ch.subtitle}</span>
+          </div>
+        </div>
+      );
+    }
+
+    function StackedPanel({
+      xs,
+      panels,
+      burnoutY,
+      xMin,
+      xMax,
+      yDomainLog,
+      xAxisLabel,
+      yAxisLabel,
+      rowH,
+    }) {
+      return (
+        <div className="relative bg-white rounded-2xl shadow p-3">
+          <div className="rounded-xl overflow-hidden">
+            {panels.map((p, idx) => (
+              <div key={p.ch.key} className={idx === 0 ? "" : "border-t border-gray-100"}>
+                <ChannelRow
+                  ch={p.ch}
+                  xs={xs}
+                  yTrue={p.yTrue}
+                  yObs={p.yObs}
+                  spansBuilder={p.spansBuilder}
+                  yMinDet={p.ch.yMinDet}
+                  yMaxSys={burnoutY}
+                  xMin={xMin}
+                  xMax={xMax}
+                  yDomainLog={yDomainLog}
+                  showXAxis={idx === panels.length - 1}
+                  xAxisLabel={xAxisLabel}
+                  yAxisLabel={yAxisLabel}
+                  rowH={rowH}
+                />
+              </div>
+            ))}
+          </div>
         </div>
       );
     }
 
     function Interactive4PLWidget() {
+      // Pro mode toggle
+      const [pro, setPro] = useState(false);
+
       const [t, setT] = useState(0.703);
 
       // Blue band slope control
@@ -345,7 +407,7 @@
       const [maxSlope, setMaxSlope] = useState(1.34);
 
       // Global system ceiling (absolute units)
-      const [burnoutY, setBurnoutY] = useState(0.5);
+      const [burnoutY, setBurnoutY] = useState(0.7);
 
       // X span and NIR gain
       const [xSpanT, setXSpanT] = useState(0.02027);
@@ -377,11 +439,12 @@
 
       const nirTargetGain = useMemo(() => nirGainFromT(nirGainT), [nirGainT]);
       const irTargetGain = useMemo(() => nirTargetGain * nirTargetGain, [nirTargetGain]);
-      
+
       const channels = useMemo(
         () => [
           {
             key: "chemi",
+            shortLabel: "Chemi",
             title: "Chemiluminescence",
             subtitle: "Highest sensitivity, but saturates early",
             targetGain: 1.0,
@@ -390,6 +453,7 @@
           },
           {
             key: "nir",
+            shortLabel: "NIR",
             title: "NIR",
             subtitle: "Lower sensitivity, but extends usable range for loading controls",
             targetGain: nirTargetGain,
@@ -398,6 +462,7 @@
           },
           {
             key: "ir",
+            shortLabel: "IR",
             title: "IR",
             subtitle: "Very low sensitivity, suited for high-abundance or recombinant targets",
             targetGain: irTargetGain,
@@ -407,7 +472,7 @@
         ],
         [nirTargetGain, irTargetGain]
       );
-      
+
       // Y domain (absolute units)
       const yDomainLog = useMemo(() => ({ yMinPos: 0.02, yMaxPos: 2.5 }), []);
 
@@ -501,37 +566,54 @@
       ]);
 
       const labelForAbundance = useMemo(() => {
-        if (abundanceFrac >= 1e-2) return "Very abundant target (housekeeper / overexpressed)";
-        if (abundanceFrac >= 1e-4) return "Moderate abundance target";
+        if (abundanceFrac >= 1e-1) return "Very abundant target (housekeeper / overexpressed)";
+        if (abundanceFrac >= 1e-3) return "Moderate abundance target";
         return "Very low abundance target (eg phospho)";
       }, [abundanceFrac]);
 
       const xUnit = "arb. loading units";
       const yUnit = "arb. signal units";
 
-      const xAxisLabel = useMemo(() => {
-        return `Total Sample Concentration (ex: μg/mL)`;
-      }, [xMin, xMax]);
-      
-      const yAxisLabel = useMemo(() => {
-        return `Measured Signal`;
-      }, [yUnit]);
+      const xAxisLabel = useMemo(() => `Total Sample Concentration (ex: μg/mL)`, []);
+      const yAxisLabel = useMemo(() => `Measured Signal`, []);
+
+      // Taller rows (kept)
+      const rowH = 250;
+
+      // When Pro is disabled: make ALL fonts relative to this slider much bigger (5x)
+      // (This panel is the "relative to this slider" section.)
+      const basicTextScale = pro ? "" : "text-[5rem] leading-[1.05]";
 
       return (
         <div className="w-full min-h-screen bg-gray-50 text-gray-900 p-4 text-base">
           <div className="max-w-[1600px] mx-auto">
-            <h1 className="text-2xl font-semibold mb-3">Interactive Burnout and Sensitivity Visualiser</h1>
+            <div className="flex items-center justify-between gap-4 mb-3">
+              <h1 className="text-2xl font-semibold">Interactive Burnout and Sensitivity Visualiser</h1>
 
-            <p className="text-sm mb-4 text-gray-700">
-              Log y-axis. Curves are absolute 4PL responses including a constant baseline (a0), so "no target" sits at a0.
-              Blue is computed using log-log slope of the baseline-subtracted signal (y - a0), but the plotted curves remain absolute.
-              Red is burnout (do not use) from the onset to the right edge.
-            </p>
+              {/* Pro toggle button */}
+              <button
+                type="button"
+                onClick={() => setPro((v) => !v)}
+                className={
+                  "px-4 py-2 rounded-xl text-sm font-semibold shadow-sm border transition " +
+                  (pro
+                    ? "bg-gray-900 text-white border-gray-900 hover:bg-gray-800"
+                    : "bg-white text-gray-900 border-gray-200 hover:bg-gray-50")
+                }
+                aria-pressed={pro}
+                title={pro ? "Pro mode enabled" : "Pro mode disabled"}
+              >
+                Pro: {pro ? "On" : "Off"}
+              </button>
+            </div>
 
             <div className="bg-white rounded-2xl shadow p-4 mb-6">
               <div className="grid grid-cols-12 gap-4 items-center">
-                <div className="col-span-12 lg:col-span-6">
-                  <div className="text-sm font-medium mb-2">Target fraction inside the loaded sample</div>
+                {/* ALWAYS VISIBLE: Target fraction slider */}
+                <div className="col-span-12">
+                  <div className={"font-medium mb-2 " + (pro ? "text-sm" : basicTextScale)}>
+                    Target fraction inside the loaded sample
+                  </div>
                   <input
                     type="range"
                     min={0}
@@ -539,93 +621,100 @@
                     step={0.005}
                     value={t}
                     onChange={(e) => setT(parseFloat(e.target.value))}
-                    className="w-full"
+                    className={"w-full " + (pro ? "" : "h-10")}
                   />
-                  <div className="mt-2 text-sm text-gray-700">
+                  <div
+                    className={
+                      "mt-2 text-gray-700 " +
+                      (pro ? "text-sm" : "text-[3rem] leading-[1.1]")
+                    }
+                  >
                     <span className="font-mono">{abundancePctStr}</span>
                     <span className="text-gray-600">  </span>
                     <span className="text-gray-600">Example: </span>
                     <span className="font-medium">{labelForAbundance}</span>
                   </div>
-                  <div className="mt-2 text-xs text-gray-600">
-                    a0 baseline: <span className="font-mono">{a0.toFixed(3)}</span>, 4PL c: <span className="font-mono">{fmtSci(c, 2)}</span>, b: <span className="font-mono">{b.toFixed(2)}</span>
-                  </div>
                 </div>
 
-                
-                <div className="col-span-12 lg:col-span-6">
-                  <div className="text-sm font-medium mb-2">Linearity band (blue): expand to the left</div>
-                  <input
-                    type="range"
-                    min={1.05}
-                    max={1.34}
-                    step={0.005}
-                    value={maxSlope}
-                    onChange={(e) => setMaxSlope(parseFloat(e.target.value))}
-                    className="w-full"
-                  />
-                  <div className="mt-2 text-sm text-gray-700">
-                    Slope band: <span className="font-mono">{slopeBand.min.toFixed(2)} to {slopeBand.max.toFixed(2)}</span>
-                    <span className="text-gray-600"> (higher max lets blue extend left)</span>
-                  </div>
-                </div>
+                {/* PRO-ONLY: ALL THE OTHER SLIDERS (unchanged features) */}
+                {pro ? (
+                  <>
+                    <div className="col-span-12 lg:col-span-6">
+                      <div className="text-sm font-medium mb-2">Linearity band (blue): expand to the left</div>
+                      <input
+                        type="range"
+                        min={1.05}
+                        max={1.34}
+                        step={0.005}
+                        value={maxSlope}
+                        onChange={(e) => setMaxSlope(parseFloat(e.target.value))}
+                        className="w-full"
+                      />
+                      <div className="mt-2 text-sm text-gray-700">
+                        Slope band: <span className="font-mono">{(0.10).toFixed(2)} to {Math.max(maxSlope, 0.11).toFixed(2)}</span>
+                        <span className="text-gray-600"> (higher max lets blue extend left)</span>
+                      </div>
+                    </div>
 
-                <div className="col-span-12 lg:col-span-6">
-                  <div className="text-sm font-medium mb-2">Burnout threshold (all channels)</div>
-                  <input
-                    type="range"
-                    min={0.20}
-                    max={1.40}
-                    step={0.01}
-                    value={burnoutY}
-                    onChange={(e) => setBurnoutY(parseFloat(e.target.value))}
-                    className="w-full"
-                  />
-                  <div className="mt-2 text-sm text-gray-700">
-                    Burnout y: <span className="font-mono">{burnoutY.toFixed(2)}</span> <span className="text-gray-600">{yUnit}</span>
-                  </div>
-                </div>
+                    <div className="col-span-12 lg:col-span-6">
+                      <div className="text-sm font-medium mb-2">Burnout threshold (all channels)</div>
+                      <input
+                        type="range"
+                        min={0.20}
+                        max={1.40}
+                        step={0.01}
+                        value={burnoutY}
+                        onChange={(e) => setBurnoutY(parseFloat(e.target.value))}
+                        className="w-full"
+                      />
+                      <div className="mt-2 text-sm text-gray-700">
+                        Burnout y: <span className="font-mono">{burnoutY.toFixed(2)}</span> <span className="text-gray-600">{yUnit}</span>
+                      </div>
+                    </div>
 
-                <div className="col-span-12 lg:col-span-6">
-                  <div className="text-sm font-medium mb-2">X-axis span (all channels)</div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.005}
-                    value={xSpanT}
-                    onChange={(e) => setXSpanT(parseFloat(e.target.value))}
-                    className="w-full"
-                  />
-                  <div className="mt-2 text-sm text-gray-700">
-                    X range: <span className="font-mono">{fmtSci(xMin, 1)} to {fmtSci(xMax, 1)}</span>
-                    <span className="text-gray-600"> {xUnit}</span>
-                  </div>
-                </div>
+                    <div className="col-span-12 lg:col-span-6">
+                      <div className="text-sm font-medium mb-2">X-axis span (all channels)</div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.005}
+                        value={xSpanT}
+                        onChange={(e) => setXSpanT(parseFloat(e.target.value))}
+                        className="w-full"
+                      />
+                      <div className="mt-2 text-sm text-gray-700">
+                        X range: <span className="font-mono">{fmtSci(xMin, 1)} to {fmtSci(xMax, 1)}</span>
+                        <span className="text-gray-600"> {xUnit}</span>
+                      </div>
+                    </div>
 
-                <div className="col-span-12">
-                  <div className="text-sm font-medium mb-2">NIR targetGain (IR = NIR²)</div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.005}
-                    value={nirGainT}
-                    onChange={(e) => setNirGainT(parseFloat(e.target.value))}
-                    className="w-full"
-                  />
-                  <div className="mt-2 text-sm text-gray-700">
-                    NIR targetGain: <span className="font-mono">{fmtSci(nirTargetGain, 2)}</span>
-                    <span className="text-gray-600">  </span>
-                    IR targetGain: <span className="font-mono">{fmtSci(irTargetGain, 2)}</span>
-                    <span className="text-gray-600">  </span>
-                    (Chemi targetGain is 1.00)
-                  </div>
-                </div>
+                    <div className="col-span-12">
+                      <div className="text-sm font-medium mb-2">NIR targetGain (IR = NIR²)</div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.005}
+                        value={nirGainT}
+                        onChange={(e) => setNirGainT(parseFloat(e.target.value))}
+                        className="w-full"
+                      />
+                      <div className="mt-2 text-sm text-gray-700">
+                        NIR targetGain: <span className="font-mono">{fmtSci(nirTargetGain, 2)}</span>
+                        <span className="text-gray-600">  </span>
+                        IR targetGain: <span className="font-mono">{fmtSci(irTargetGain, 2)}</span>
+                        <span className="text-gray-600">  </span>
+                        (Chemi targetGain is 1.00)
+                      </div>
+                    </div>
+                  </>
+                ) : null}
               </div>
             </div>
 
             <div className="grid grid-cols-12 gap-6 items-stretch">
+              {/* Left legend panel */}
               <div className="col-span-12 lg:col-span-3">
                 <div className="bg-white rounded-2xl shadow p-4 h-full">
                   <div className="text-sm font-medium mb-3">Legend</div>
@@ -674,33 +763,22 @@
                       True assay response
                     </li>
                   </ul>
-
-                  <div className="mt-5 text-xs text-gray-600 leading-relaxed">
-                    X-axis: {xUnit}. Y-axis: {yUnit} on a log scale. Baseline is constant (a0), so increasing total loading
-                    does not push the whole curve upward when target is absent.
-                  </div>
                 </div>
               </div>
 
-              <div className="col-span-12 lg:col-span-9 grid grid-cols-1 xl:grid-cols-3 gap-6">
-                {panels.map((p) => (
-                  <Panel
-                    key={p.ch.key}
-                    title={p.ch.title}
-                    subtitle={p.ch.subtitle}
-                    xs={xs}
-                    yTrue={p.yTrue}
-                    yObs={p.yObs}
-                    spansBuilder={p.spansBuilder}
-                    yMinDet={p.ch.yMinDet}
-                    yMaxSys={burnoutY}
-                    xAxisLabel={xAxisLabel}
-                    yAxisLabel={yAxisLabel}
-                    xMin={xMin}
-                    xMax={xMax}
-                    yDomainLog={yDomainLog}
-                  />
-                ))}
+              {/* Right stacked graphs */}
+              <div className="col-span-12 lg:col-span-9">
+                <StackedPanel
+                  xs={xs}
+                  panels={panels}
+                  burnoutY={burnoutY}
+                  xMin={xMin}
+                  xMax={xMax}
+                  yDomainLog={yDomainLog}
+                  xAxisLabel={xAxisLabel}
+                  yAxisLabel={yAxisLabel}
+                  rowH={rowH}
+                />
               </div>
             </div>
           </div>
@@ -713,3 +791,9 @@
   </script>
 </body>
 </html>
+
+
+
+
+
+
