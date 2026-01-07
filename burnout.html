@@ -75,8 +75,8 @@
     }
     
     function abundanceFractionFromT(t) {
-      const minF = 1e-4;
-      const maxF = 0.5;
+      const minF = 2e-5;
+      const maxF = 0.05;
       const logMin = Math.log10(minF);
       const logMax = Math.log10(maxF);
       return Math.pow(10, logMin + t * (logMax - logMin));
@@ -415,7 +415,7 @@
 
       // 4PL shape parameters
       const b = 1.35;
-      const c = 1e-2;
+      const c = 1e-3; // adjust all channels sensitivity here
 
       const abundanceFrac = useMemo(() => abundanceFractionFromT(t), [t]);
       const abundancePctStr = useMemo(() => fmtPct(abundanceFrac), [abundanceFrac]);
@@ -566,10 +566,23 @@
       ]);
 
       const labelForAbundance = useMemo(() => {
-        if (abundanceFrac >= 1e-1) return "Very abundant target (housekeeper / overexpressed)";
-        if (abundanceFrac >= 1e-3) return "Moderate abundance target";
-        return "Very low abundance target (eg phospho)";
+        if (abundanceFrac >= 0.03)
+          return "Extremely abundant (HSP60, HSP70, HSP90) (3.000% to 5.000%)";
+        if (abundanceFrac >= 0.01)
+          return "Very abundant, housekeeper range (β-Actin, α/β-Tubulin, GAPDH) (1.000% to 3.000%)";
+        if (abundanceFrac >= 0.003)
+          return "Abundant (metabolic enzymes, ribosomal proteins) (0.300% to 1.000%)";
+        if (abundanceFrac >= 0.001)
+          return "Moderate (ERK1/2, AKT, LDH) (0.100% to 0.300%)";
+        if (abundanceFrac >= 0.0003)
+          return "Low to moderate (STATs, SMADs, many kinases) (0.030% to 0.100%)";
+        if (abundanceFrac >= 0.0001)
+          return "Low, many signaling proteins (RAF, PI3K subunits, adaptor proteins) (0.010% to 0.030%)";
+        if (abundanceFrac >= 0.00003)
+          return "Very low (transcription factors, rare receptors) (0.003% to 0.010%)";
+        return "Extremely low, phospho-like (p-AKT, p-ERK, transient PTMs) (0.001% to 0.003%)";
       }, [abundanceFrac]);
+
 
       const xUnit = "arb. loading units";
       const yUnit = "arb. signal units";
@@ -626,12 +639,10 @@
                   <div
                     className={
                       "mt-2 text-gray-700 " +
-                      (pro ? "text-sm" : "text-[3rem] leading-[1.1]")
+                      (pro ? "text-sm" : "text-[1.7rem] leading-[1.1]")
                     }
                   >
-                    <span className="font-mono">{abundancePctStr}</span>
-                    <span className="text-gray-600">  </span>
-                    <span className="text-gray-600">Example: </span>
+                    <span className="text-gray-600">Order-of-magnitude estimate: </span>
                     <span className="font-medium">{labelForAbundance}</span>
                   </div>
                 </div>
