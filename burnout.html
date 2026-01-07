@@ -198,7 +198,7 @@
       const rowLeftMargin = 16 + 110;
       const rowRightMargin = 16 + 14;
       const rowTopMargin = 10;
-      const rowBottomMargin = showXAxis ? 54 : 18;
+      const rowBottomMargin = showXAxis ? 30 : 18;
 
       const plotW = WIDTH - rowLeftMargin - rowRightMargin;
       const plotH = rowH - rowTopMargin - rowBottomMargin;
@@ -315,25 +315,6 @@
             {/* X axis ticks + label only on bottom row */}
             {showXAxis ? (
               <g transform={`translate(${plotX},${plotY})`}>
-                {xTicks.map((xt, i) => {
-                  const X = x2px(xt);
-                  return (
-                    <g key={i} transform={`translate(${X}, ${plotH})`}>
-                      <line x1={0} x2={0} y1={0} y2={6} stroke="currentColor" opacity="0.5" />
-                      <text
-                        x={0}
-                        y={20}
-                        textAnchor="middle"
-                        fontSize="12"
-                        fill="currentColor"
-                        opacity="0.8"
-                      >
-                        {fmtTick(xt)}
-                      </text>
-                    </g>
-                  );
-                })}
-
                 <text
                   x={plotW / 2}
                   y={plotH + 44}
