@@ -110,6 +110,31 @@
       return `${m.toFixed(sig)}e${e >= 0 ? "+" : ""}${e}`;
     }
 
+    function fmtTick(x) {
+      if (!isFinite(x)) return String(x);
+      if (x === 0) return "0";
+
+      const ax = Math.abs(x);
+      
+
+      // For values in [0.01, 1000): show as plain decimals with minimal needed decimals.
+      // This will produce labels like: 0.02, 0.2, 2
+      if (ax >= 0.01 && ax < 1000) {
+        // pick decimals based on magnitude
+        let decimals = 0;
+        if (ax < 0.1) decimals = 2;      // 0.02, 0.05
+        else if (ax < 1) decimals = 1;   // 0.2, 0.5
+        else decimals = 0;              // 2, 5, 10
+
+        // round, then strip trailing zeros
+        const s = x.toFixed(decimals);
+        return s.replace(/\.0+$/, "").replace(/(\.\d*[1-9])0+$/, "$1");
+      }
+
+      // Otherwise fall back to scientific
+      return fmtSci(x, 1);
+    }
+
     function fmtPct(frac) {
       const pct = frac * 100;
       if (pct >= 1) return `${pct.toFixed(1)}%`;
@@ -127,6 +152,38 @@
 
     function xHalfDecadesFromT(t) {
       return 0.8 + t * (3.0 - 0.8);
+    }
+
+    // 1-2-5 ticks per decade, much nicer visually on log axes
+    function logTicks125(min, max) {
+      if (!(min > 0) || !(max > 0) || max <= min) return [];
+      const ticks = [];
+      const multipliers = [1, 2, 5];
+      const eMin = Math.floor(Math.log10(min));
+      const eMax = Math.ceil(Math.log10(max));
+      for (let e = eMin; e <= eMax; e++) {
+        const base = Math.pow(10, e);
+        for (const m of multipliers) {
+          const v = m * base;
+          if (v >= min && v <= max) ticks.push(v);
+        }
+      }
+      ticks.sort((a, b) => a - b);
+      // de-dup with tolerance
+      const out = [];
+      for (const v of ticks) {
+        if (out.length === 0 || Math.abs(Math.log10(v) - Math.log10(out[out.length - 1])) > 1e-6) out.push(v);
+      }
+      return out;
+    }
+
+    function uniqueSorted(vals) {
+      const v = vals.filter((x) => isFinite(x) && x > 0).slice().sort((a, b) => a - b);
+      const out = [];
+      for (const x of v) {
+        if (out.length === 0 || Math.abs(Math.log10(x) - Math.log10(out[out.length - 1])) > 1e-6) out.push(x);
+      }
+      return out;
     }
 
     const WIDTH = 520;
@@ -150,10 +207,16 @@
     }) {
       const clipId = useId();
 
-      const plotX = PAD + 44;      // extra room for y-axis label
-      const plotY = PAD + 6;
-      const plotW = WIDTH - (PAD + 44) - PAD;
-      const plotH = HEIGHT - (PAD + 34) - PAD; // extra room for x-axis label
+      // Layout: extra margins for tick labels
+      const leftMargin = PAD + 74;
+      const rightMargin = PAD + 12;
+      const topMargin = PAD + 8;
+      const bottomMargin = PAD + 48;
+
+      const plotX = leftMargin;
+      const plotY = topMargin;
+      const plotW = WIDTH - leftMargin - rightMargin;
+      const plotH = HEIGHT - topMargin - bottomMargin;
 
       const x2px = useMemo(() => makeX2pxLocal(xMin, xMax, plotW), [xMin, xMax, plotW]);
       const y2px = useMemo(
@@ -163,6 +226,14 @@
 
       const truePath = useMemo(() => linePath(xs, yTrue, x2px, y2px), [xs, yTrue, x2px, y2px]);
       const obsPath = useMemo(() => linePath(xs, yObs, x2px, y2px), [xs, yObs, x2px, y2px]);
+
+      const xTicks = useMemo(() => logTicks125(xMin, xMax), [xMin, xMax]);
+
+      // Y ticks: 1-2-5 ticks plus force-include yMinDet and yMaxSys so the axis matches what you draw
+      const yTicks = useMemo(() => {
+        const base = logTicks125(yDomainLog.yMinPos, yDomainLog.yMaxPos);
+        return uniqueSorted([...base, yMinDet, yMaxSys]);
+      }, [yDomainLog, yMinDet, yMaxSys]);
 
       return (
         <div className="relative bg-white rounded-2xl shadow p-3">
@@ -185,16 +256,41 @@
             </defs>
 
             <g transform={`translate(${plotX},${plotY})`}>
+              {/* Y ticks and labels */}
+              {yTicks.map((v, i) => {
+                const yy = y2px(v);
+                return (
+                  <g key={`yt-${i}`}>
+                    <line x1={-6} x2={0} y1={yy} y2={yy} stroke="currentColor" opacity="0.75" />
+                    <text x={-10} y={yy + 4} textAnchor="end" fontSize="11" fill="currentColor" opacity="0.85">
+                      {fmtTick(v)}
+                    </text>
+                  </g>
+                );
+              })}
 
-              {/* Y-axis label */}
+              {/* X ticks and labels */}
+              {xTicks.map((v, i) => {
+                const xx = x2px(v);
+                return (
+                  <g key={`xt-${i}`} transform={`translate(${xx},${plotH})`}>
+                    <line x1={0} x2={0} y1={0} y2={6} stroke="currentColor" opacity="0.75" />
+                    <text x={0} y={20} textAnchor="middle" fontSize="11" fill="currentColor" opacity="0.85">
+                      {fmtSci(v, 1)}
+                    </text>
+                  </g>
+                );
+              })}
+
+              {/* Y axis label */}
               <text
-                x={-36}
+                x={-58}
                 y={plotH / 2}
                 textAnchor="middle"
-                fontSize="14"
+                fontSize="13"
                 fill="currentColor"
                 opacity="0.80"
-                transform={`rotate(-90, ${-36}, ${plotH / 2})`}
+                transform={`rotate(-90, ${-58}, ${plotH / 2})`}
               >
                 {yAxisLabel}
               </text>
@@ -237,7 +333,7 @@
                   strokeLinecap="butt"
                 />
 
-                {/* Observed response (clipped) */}
+                {/* Observed response */}
                 <path
                   d={obsPath}
                   fill="none"
@@ -247,12 +343,12 @@
                 />
               </g>
 
-              {/* X-axis label */}
+              {/* X axis label */}
               <text
                 x={plotW / 2}
-                y={plotH + 30}
+                y={plotH + 40}
                 textAnchor="middle"
-                fontSize="14"
+                fontSize="13"
                 fill="currentColor"
                 opacity="0.80"
               >
@@ -265,18 +361,18 @@
     }
 
     function Interactive4PLWidget() {
-      const [t, setT] = useState(0.62);
+      const [t, setT] = useState(0.703);
 
       // Blue band slope control
       const fixedMinSlope = 0.10;
-      const [maxSlope, setMaxSlope] = useState(1.15);
+      const [maxSlope, setMaxSlope] = useState(1.34);
 
       // Global system ceiling (absolute units)
-      const [burnoutY, setBurnoutY] = useState(0.90);
+      const [burnoutY, setBurnoutY] = useState(0.5);
 
       // X span and NIR gain
-      const [xSpanT, setXSpanT] = useState(0.50);
-      const [nirGainT, setNirGainT] = useState(0.42);
+      const [xSpanT, setXSpanT] = useState(0.02027);
+      const [nirGainT, setNirGainT] = useState(0.616);
 
       // 4PL shape parameters
       const b = 1.35;
@@ -285,9 +381,9 @@
       const abundanceFrac = useMemo(() => abundanceFractionFromT(t), [t]);
       const abundancePctStr = useMemo(() => fmtPct(abundanceFrac), [abundanceFrac]);
 
-      // Constant baseline (fixes the "signal too high" caused by baseline growing with loading)
-      const a0 = 0.03;
-      const d0 = 1.5;
+      // Constant baseline
+      const a0 = 0.025;
+      const d0 = 2.5;
 
       // X domain
       const xCenterLog10 = -0.5;
@@ -304,7 +400,7 @@
 
       const nirTargetGain = useMemo(() => nirGainFromT(nirGainT), [nirGainT]);
       const irTargetGain = useMemo(() => nirTargetGain * nirTargetGain, [nirTargetGain]);
-
+      
       const channels = useMemo(
         () => [
           {
@@ -342,10 +438,8 @@
         const EPS = 1e-12;
 
         return channels.map((ch) => {
-          // Constant baseline (no dependence on xTotal)
           const yBase = xs.map(() => a0);
 
-          // Absolute 4PL response (includes baseline)
           const yTrue = xs.map((xTotal, i) => {
             const xTargetEff = Math.max(1e-16, abundanceFrac * xTotal * ch.targetGain);
             const a = yBase[i];
@@ -356,14 +450,11 @@
             return yScaled;
           });
 
-          // Observed response (floor + burnout clipping) in absolute units
           const yObs = yTrue.map((y) => clamp(y, ch.yMinDet, burnoutY));
 
-          // Burnout onset
           const idxBurn = yTrue.findIndex((y) => y >= burnoutY);
           const xCutBurn = idxBurn === -1 ? Infinity : xs[Math.max(0, idxBurn)];
 
-          // Slope computed on net signal (absolute minus baseline) to define "linearity"
           const logX = xs.map((x) => Math.log10(x));
           const yNet = yTrue.map((y, i) => Math.max(EPS, y - yBase[i]));
           const logY = yNet.map((yn) => Math.log10(yn));
@@ -388,7 +479,6 @@
 
           const spansBuilder = ({ x2px, y2px, plotW, plotH }) => (
             <>
-              {/* Below detection floor shading */}
               <rect
                 x={0}
                 y={y2px(ch.yMinDet)}
@@ -398,14 +488,12 @@
                 opacity="0.06"
               />
 
-              {/* Blue regions */}
               {blueSpans.map(([xA, xB], k) => (
                 <React.Fragment key={k}>
                   {rectForXSpanLocal(xA, xB, x2px, plotH, "#66b3ff", 0.18)}
                 </React.Fragment>
               ))}
 
-              {/* Red: burnout from onset to xMax */}
               {xCutBurn < xMax &&
                 rectForXSpanLocal(
                   Math.max(xCutBurn, xMin),
@@ -441,16 +529,15 @@
         return "Very low abundance target (eg phospho)";
       }, [abundanceFrac]);
 
-      // Units (edit these to match your mental model)
-      const xUnit = "relative loading (arb. units)";
-      const yUnit = "signal (arb. units)";
+      const xUnit = "arb. loading units";
+      const yUnit = "arb. signal units";
 
       const xAxisLabel = useMemo(() => {
-        return `total sample loading, ${xUnit} (range: ${fmtSci(xMin, 1)} to ${fmtSci(xMax, 1)})`;
+        return `total sample loading (${xUnit}), range: ${fmtSci(xMin, 1)} to ${fmtSci(xMax, 1)}`;
       }, [xMin, xMax]);
 
       const yAxisLabel = useMemo(() => {
-        return `measured signal, ${yUnit} (log scale)`;
+        return `measured signal (${yUnit}, log scale)`;
       }, [yUnit]);
 
       return (
@@ -484,15 +571,16 @@
                     <span className="font-medium">{labelForAbundance}</span>
                   </div>
                   <div className="mt-2 text-xs text-gray-600">
-                    a0 baseline (constant): <span className="font-mono">{a0.toFixed(3)}</span>, 4PL c: <span className="font-mono">{fmtSci(c, 2)}</span>, b: <span className="font-mono">{b.toFixed(2)}</span>
+                    a0 baseline: <span className="font-mono">{a0.toFixed(3)}</span>, 4PL c: <span className="font-mono">{fmtSci(c, 2)}</span>, b: <span className="font-mono">{b.toFixed(2)}</span>
                   </div>
                 </div>
 
+                
                 <div className="col-span-12 lg:col-span-6">
                   <div className="text-sm font-medium mb-2">Linearity band (blue): expand to the left</div>
                   <input
                     type="range"
-                    min={0.20}
+                    min={1.05}
                     max={1.34}
                     step={0.005}
                     value={maxSlope}
@@ -564,24 +652,55 @@
               <div className="col-span-12 lg:col-span-3">
                 <div className="bg-white rounded-2xl shadow p-4 h-full">
                   <div className="text-sm font-medium mb-3">Legend</div>
+
                   <ul className="space-y-3 text-sm">
                     <li className="flex items-center gap-3">
                       <span className="inline-block w-4 h-4 rounded" style={{ background: "rgba(0,0,0,0.06)" }} />
                       Below detection floor (not quantifiable)
                     </li>
+
                     <li className="flex items-center gap-3">
                       <span className="inline-block w-4 h-4 rounded" style={{ background: "#66b3ff", opacity: 0.18 }} />
                       Slope-based linear region (computed from baseline-subtracted signal)
                     </li>
+
                     <li className="flex items-center gap-3">
                       <span className="inline-block w-4 h-4 rounded" style={{ background: "#ff9999", opacity: 0.25 }} />
                       Burnout region (do not use)
+                    </li>
+
+                    <li className="flex items-center gap-3">
+                      <svg width="44" height="12" className="block">
+                        <line x1="0" y1="6" x2="44" y2="6" stroke="currentColor" strokeWidth="1.5" strokeDasharray="6 6" />
+                      </svg>
+                      Burnout threshold
+                    </li>
+
+                    <li className="flex items-center gap-3">
+                      <svg width="44" height="12" className="block">
+                        <line x1="0" y1="6" x2="44" y2="6" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2 6" opacity="0.9" />
+                      </svg>
+                      Detection floor
+                    </li>
+
+                    <li className="flex items-center gap-3">
+                      <svg width="44" height="12" className="block">
+                        <line x1="0" y1="6" x2="44" y2="6" stroke="currentColor" strokeWidth="3" />
+                      </svg>
+                      Observed (after floor + burnout)
+                    </li>
+
+                    <li className="flex items-center gap-3">
+                      <svg width="44" height="12" className="block">
+                        <line x1="0" y1="6" x2="44" y2="6" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 4" />
+                      </svg>
+                      True assay response
                     </li>
                   </ul>
 
                   <div className="mt-5 text-xs text-gray-600 leading-relaxed">
                     X-axis: {xUnit}. Y-axis: {yUnit} on a log scale. Baseline is constant (a0), so increasing total loading
-                    does not artificially push the whole curve upward when target is absent.
+                    does not push the whole curve upward when target is absent.
                   </div>
                 </div>
               </div>
