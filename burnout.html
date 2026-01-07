@@ -198,7 +198,7 @@
       const rowLeftMargin = 16 + 110;
       const rowRightMargin = 16 + 14;
       const rowTopMargin = 10;
-      const rowBottomMargin = showXAxis ? 30 : 18;
+      const rowBottomMargin = showXAxis ? 40 : 18; 
 
       const plotW = WIDTH - rowLeftMargin - rowRightMargin;
       const plotH = rowH - rowTopMargin - rowBottomMargin;
@@ -317,7 +317,7 @@
               <g transform={`translate(${plotX},${plotY})`}>
                 <text
                   x={plotW / 2}
-                  y={plotH + 44}
+                  y={plotH + 24}
                   textAnchor="middle"
                   fontSize="18"
                   fill="currentColor"
